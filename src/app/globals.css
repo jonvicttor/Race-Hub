@@ -3,6 +3,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Cores base para o modo claro */
+  --race-volt: #ccff00;
+  --race-card: #f3f4f6;
+  --race-gray: #e5e7eb;
 }
 
 @theme inline {
@@ -10,12 +14,20 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Conectando as cores de elite ao Tailwind */
+  --color-race-volt: var(--race-volt);
+  --color-race-card: var(--race-card);
+  --color-race-gray: var(--race-gray);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    /* Fundo quase preto total e cards para alta performance no modo escuro */
+    --background: #050505;
     --foreground: #ededed;
+    --race-volt: #ccff00;
+    --race-card: #121212;
+    --race-gray: #252525;
   }
 }
 
