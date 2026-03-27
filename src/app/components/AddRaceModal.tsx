@@ -17,7 +17,6 @@ export function AddRaceModal() {
   const [eventLocation, setEventLocation] = useState(''); 
   const [price, setPrice] = useState(''); 
   
-  // Novos estados para corridas já concluídas
   const [finishTime, setFinishTime] = useState('');
   const [pace, setPace] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -55,11 +54,19 @@ export function AddRaceModal() {
     e.preventDefault();
     setLoading(true);
 
+    // BUSCA O USUÁRIO LOGADO ANTES DE SALVAR
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      alert('Sessão expirada ou não autenticada. Faça login novamente.');
+      setLoading(false);
+      return;
+    }
+
     const numericPrice = price.trim() === '' ? null : parseFloat(price.replace(',', '.'));
     let certificateUrl = null;
 
     try {
-      // TRATAMENTO DO UPLOAD SE ESTIVER CONCLUÍDO
       if (status === 'Concluído') {
         if (!file) {
           alert('Por favor, anexe o certificado (PNG, JPG ou PDF) para registrar uma prova concluída.');
@@ -68,7 +75,6 @@ export function AddRaceModal() {
         }
 
         const fileExt = file.name.split('.').pop();
-        // Cria um nome único para o arquivo para não dar conflito
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
@@ -77,7 +83,6 @@ export function AddRaceModal() {
 
         if (uploadError) throw new Error('Erro ao fazer upload do certificado.');
 
-        // Pega o link público do arquivo recém-enviado
         const { data: publicUrlData } = supabase.storage
           .from('certificates')
           .getPublicUrl(fileName);
@@ -85,9 +90,10 @@ export function AddRaceModal() {
         certificateUrl = publicUrlData.publicUrl;
       }
 
-      // SALVA NO BANCO
+      // SALVA NO BANCO VINCULANDO A CORRIDA AO ID DO USUÁRIO LOGADO
       const { error } = await supabase.from('races').insert([
         {
+          user_id: user.id, // VINCULAÇÃO AQUI
           name,
           date,
           distance,
@@ -98,7 +104,7 @@ export function AddRaceModal() {
           price: numericPrice,
           finish_time: status === 'Concluído' ? finishTime : null,
           pace: status === 'Concluído' ? pace : null,
-          certificate_url: certificateUrl, // Link do certificado
+          certificate_url: certificateUrl,
         },
       ]);
 
@@ -174,7 +180,6 @@ export function AddRaceModal() {
                 </select>
               </div>
 
-              {/* CAMPOS ESCONDIDOS: Só aparecem se for CONCLUÍDO */}
               {status === 'Concluído' && (
                 <div className="flex flex-col gap-4 p-4 bg-race-volt/5 border border-race-volt/20 rounded-2xl animate-in fade-in slide-in-from-top-2">
                   <div className="grid grid-cols-2 gap-4">
@@ -210,7 +215,6 @@ export function AddRaceModal() {
                 </div>
               )}
 
-              {/* CAMPOS NORMAIS: Só aparecem se NÃO for concluído */}
               {status !== 'Concluído' && (
                 <>
                   <div>

@@ -61,10 +61,11 @@ export default function Home() {
     if (!user) return;
 
     const { data: p } = await supabase.from('profiles').select('*');
-    // MÁGICA 1: Busca apenas as corridas que NÃO estão concluídas
+    // Filtra apenas as corridas do usuário logado
     const { data: r } = await supabase
       .from('races')
       .select('*')
+      .eq('user_id', user.id)
       .neq('status', 'Concluído')
       .order('date', { ascending: true });
 
@@ -91,9 +92,10 @@ export default function Home() {
 
       const [profilesRes, racesRes] = await Promise.all([
         supabase.from('profiles').select('*'),
-        // MÁGICA 2: Busca apenas as corridas que NÃO estão concluídas
+        // Filtra apenas as corridas do usuário logado
         supabase.from('races')
           .select('*')
+          .eq('user_id', user.id)
           .neq('status', 'Concluído')
           .order('date', { ascending: true })
       ]);

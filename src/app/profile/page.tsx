@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, FileText } from 'lucide-react';
-import { AddRaceModal } from '../components/AddRaceModal'; // Importando o modal
+import { AddRaceModal } from '../components/AddRaceModal'; 
 
 interface Race {
   id: string;
@@ -13,7 +13,7 @@ interface Race {
   finish_time: string;
   pace: string;
   status: string;
-  certificate_url?: string; // Novo campo
+  certificate_url?: string; 
 }
 
 interface Profile {
@@ -42,9 +42,11 @@ export default function ProfilePage() {
 
       const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       
+      // Filtra apenas as corridas do usuário logado
       const { data: r } = await supabase
         .from('races')
         .select('*')
+        .eq('user_id', user.id)
         .eq('status', 'Concluído')
         .order('date', { ascending: false });
 
@@ -164,7 +166,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Header da Galeria com Botão de Adicionar História */}
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Galeria de Conquistas</h3>
         <AddRaceModal /> 
@@ -182,7 +183,6 @@ export default function ProfilePage() {
                   <h4 className="font-bold text-white uppercase leading-tight">{race.name}</h4>
                   <p className="text-xs text-gray-400 mt-0.5">{race.distance.toUpperCase()}</p>
                   
-                  {/* Botão de Ver Certificado */}
                   {race.certificate_url && (
                     <a 
                       href={race.certificate_url} 
