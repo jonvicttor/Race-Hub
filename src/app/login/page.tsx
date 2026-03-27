@@ -34,7 +34,9 @@ export default function LoginPage() {
           email,
           password,
           options: {
-            data: { username, full_name: username }
+            data: { username, full_name: username },
+            // A MÁGICA DO REDIRECIONAMENTO AQUI 👇
+            emailRedirectTo: `${window.location.origin}/auth/callback`
           }
         });
         if (error) throw error;
@@ -65,7 +67,7 @@ export default function LoginPage() {
         if (error) throw error;
         router.push('/'); 
       }
-    } catch (error: unknown) { // CORREÇÃO DO TYPESCRIPT AQUI (Substituí any por unknown)
+    } catch (error: unknown) { 
       const errorMessage = error instanceof Error ? error.message : 'Ocorreu um erro inesperado';
       alert(errorMessage);
     } finally {
