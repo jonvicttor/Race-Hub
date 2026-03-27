@@ -1,7 +1,7 @@
 'use client'; 
 
 import { useState, useEffect, useCallback } from 'react'; 
-import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Zap } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Zap, Link2, Map } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter } from 'next/navigation';
 import { AddRaceModal } from './components/AddRaceModal';
@@ -17,6 +17,9 @@ interface Race {
   kit_datetime?: string;
   finish_time?: string;
   pace?: string;
+  registration_link?: string;
+  event_location?: string;
+  price?: string;
 }
 
 interface Profile {
@@ -24,6 +27,33 @@ interface Profile {
   username: string;
   avatar_url: string;
 }
+
+// Função inteligente corrigida e com tipagem segura para o TypeScript
+const formatPrice = (priceStr?: string | number | null) => {
+  if (priceStr === null || priceStr === undefined || priceStr === '') return '';
+  
+  // Força virar string para não dar erro se vier número do banco
+  const str = String(priceStr);
+  
+  // Verifica se tem algum número
+  const hasNumbers = /\d/.test(str);
+  if (!hasNumbers) return str;
+
+  // Limpa e formata
+  let cleanStr = str.replace(/[^\d.,]/g, '');
+  
+  if (cleanStr.includes(',')) {
+    cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
+  }
+
+  const num = parseFloat(cleanStr);
+  if (isNaN(num)) return str;
+
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(num);
+};
 
 export default function Home() {
   const [races, setRaces] = useState<Race[]>([]);
@@ -40,7 +70,9 @@ export default function Home() {
     const { data: r } = await supabase.from('races').select('*').order('date', { ascending: true });
 
     if (p) {
-      setProfiles(p);
+      const friends = p.filter(profile => profile.id !== user.id);
+      setProfiles(friends);
+      
       const current = p.find(profile => profile.id === user.id);
       if (current) setUserProfile(current);
     }
@@ -65,7 +97,9 @@ export default function Home() {
 
       if (isMounted) {
         if (profilesRes.data) {
-          setProfiles(profilesRes.data);
+          const friends = profilesRes.data.filter(profile => profile.id !== user.id);
+          setProfiles(friends);
+
           const current = profilesRes.data.find(p => p.id === user.id);
           if (current) setUserProfile(current);
         }
@@ -110,7 +144,6 @@ export default function Home() {
             <LogOut size={20} />
           </button>
           
-          {/* Avatar Clicável -> Vai para o Perfil */}
           <button 
             onClick={() => router.push('/profile')}
             className="w-10 h-10 rounded-full border-2 border-race-volt p-0.5 hover:scale-105 active:scale-95 transition-transform"
@@ -139,6 +172,31 @@ export default function Home() {
                 <Trophy size={16} /> {upcomingRace.distance.toUpperCase()}
               </div>
             </div>
+            
+            {/* Informações Extras no Destaque */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {upcomingRace.event_location && (
+                <div className="flex items-center gap-1 bg-black/10 px-2 py-1 rounded text-xs font-bold">
+                  <Map size={12} /> {upcomingRace.event_location}
+                </div>
+              )}
+              {upcomingRace.price && (
+                <div className="flex items-center gap-1 bg-black/10 px-2 py-1 rounded text-xs font-bold text-black">
+                  {formatPrice(upcomingRace.price)}
+                </div>
+              )}
+            </div>
+
+            {upcomingRace.registration_link && upcomingRace.status === 'A Planejar' && (
+              <a 
+                href={upcomingRace.registration_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center gap-2 bg-black text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:scale-105 transition-transform"
+              >
+                <Link2 size={14} /> Inscrever-se
+              </a>
+            )}
           </div>
           <div className="absolute -right-4 -bottom-4 opacity-10">
             <Trophy size={150} strokeWidth={3} />
@@ -167,19 +225,24 @@ export default function Home() {
         )}
       </div>
 
-      <h3 className="text-xs font-bold uppercase text-gray-500 mb-4 tracking-widest">Calendário e Resultados</h3>
+      {/* Calendário e Resultados + Botão Novo */}
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Calendário e Resultados</h3>
+        <AddRaceModal />
+      </div>
+      
       <div className="flex flex-col gap-4">
         {races.map((race) => (
           <div key={race.id} className={`p-4 rounded-2xl border flex flex-col gap-3 transition-all ${race.status === 'Concluído' ? 'bg-race-card border-race-volt/30 shadow-lg shadow-race-volt/5' : 'bg-race-card border-white/5'}`}>
             <div className="flex justify-between items-start">
-              <div>
+              <div className="pr-4">
                 <h4 className="font-bold text-lg leading-tight uppercase text-white">{race.name}</h4>
                 <p className={`text-xs mt-1 ${race.status === 'Inscrito' ? 'text-race-volt font-bold' : race.status === 'Concluído' ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
                   {race.status === 'Concluído' ? '🏁 Concluída' : race.status}
                 </p>
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <span className="text-race-volt font-black italic">{race.distance.toUpperCase()}</span>
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <span className="text-race-volt font-black italic whitespace-nowrap">{race.distance.toUpperCase()}</span>
                 <button 
                   onClick={() => setEditingRace(race)}
                   className="p-2 bg-white/5 rounded-lg hover:bg-race-volt hover:text-black transition-all"
@@ -202,25 +265,59 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-400 mt-2">
-                <span className="flex items-center gap-1">
-                  <Calendar size={12} /> {race.date.split('-')[2]}/{race.date.split('-')[1]}
-                </span>
-                <span className="flex items-center gap-1">
-                  <MapPin size={12} /> {race.kit_location || 'Local TBD'}
-                </span>
-                {race.kit_datetime && (
-                  <span className="flex items-center gap-1 text-race-volt font-medium">
-                    <Clock size={12} /> {race.kit_datetime}
+              <div className="flex flex-col gap-3 mt-2">
+                {/* Linha 1: Data e Local do Evento (Opcional) */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <Calendar size={12} /> {race.date.split('-')[2]}/{race.date.split('-')[1]}
                   </span>
+                  
+                  {race.event_location && (
+                    <span className="flex items-center gap-1 text-white">
+                      <Map size={12} className="text-race-volt" /> {race.event_location}
+                    </span>
+                  )}
+
+                  {race.price && (
+                    <span className="flex items-center gap-1 text-green-400 font-medium">
+                      {formatPrice(race.price)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Linha 2: Informações do Kit (Opcional) */}
+                {(race.kit_location || race.kit_datetime) && (
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-500 bg-white/5 p-2 rounded-lg border border-white/5">
+                    <span className="font-bold uppercase text-[9px] tracking-widest text-gray-400">KIT:</span>
+                    {race.kit_location && (
+                      <span className="flex items-center gap-1">
+                        <MapPin size={10} /> {race.kit_location}
+                      </span>
+                    )}
+                    {race.kit_datetime && (
+                      <span className="flex items-center gap-1">
+                        <Clock size={10} /> {race.kit_datetime}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Botão de Inscrição no Card da Lista */}
+                {race.registration_link && race.status === 'A Planejar' && (
+                  <a 
+                    href={race.registration_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center justify-center gap-2 bg-race-volt/10 text-race-volt border border-race-volt/20 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-race-volt hover:text-black transition-colors"
+                  >
+                    <Link2 size={12} /> Link de Inscrição
+                  </a>
                 )}
               </div>
             )}
           </div>
         ))}
       </div>
-
-      <AddRaceModal />
 
       {editingRace && (
         <EditRaceModal 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Trash2, Timer, Zap, Calculator } from 'lucide-react'; // Calculator adicionado
+import { X, Save, Trash2, Timer, Zap, Calculator, Link2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Race {
@@ -14,6 +14,9 @@ interface Race {
   kit_datetime?: string;
   finish_time?: string;
   pace?: string;
+  registration_link?: string; 
+  event_location?: string;
+  price?: string | number | null; // Corrigido para remover o 'any'
 }
 
 interface EditRaceModalProps {
@@ -30,44 +33,48 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
   
   const [finishTime, setFinishTime] = useState(race.finish_time || '');
   const [pace, setPace] = useState(race.pace || '');
+  const [registrationLink, setRegistrationLink] = useState(race.registration_link || '');
+  const [eventLocation, setEventLocation] = useState(race.event_location || '');
+  
+  // Inicializa o preço. Se vier do banco, garante que vira string com vírgula para o input
+  const initialPrice = race.price ? String(race.price).replace('.', ',') : '';
+  const [price, setPrice] = useState(initialPrice);
 
-  // FUNÇÃO NOVA: Calcula o Pace com base no tempo e distância
   const handleCalculatePace = () => {
     if (!finishTime || !race.distance) {
       alert("Preencha o Tempo Final primeiro (ex: 00:55:00 ou 55:00)");
       return;
     }
 
-    // Tenta extrair apenas os números da distância (ex: "5km" -> 5)
     const distMatch = race.distance.match(/[\d.]+/);
     if (!distMatch) return;
     const distKm = parseFloat(distMatch[0]);
 
-    // Separa as horas, minutos e segundos
     const parts = finishTime.split(':').map(Number);
     let totalMinutes = 0;
 
-    if (parts.length === 3) { // Formato HH:MM:SS
+    if (parts.length === 3) { 
       totalMinutes = (parts[0] * 60) + parts[1] + (parts[2] / 60);
-    } else if (parts.length === 2) { // Formato MM:SS
+    } else if (parts.length === 2) { 
       totalMinutes = parts[0] + (parts[1] / 60);
     } else {
       alert("Use o formato HH:MM:SS ou MM:SS");
       return;
     }
 
-    // Calcula minutos por km
     const paceDecimal = totalMinutes / distKm;
     const paceMinutes = Math.floor(paceDecimal);
     const paceSeconds = Math.round((paceDecimal - paceMinutes) * 60);
 
-    // Formata bonitinho com zeros à esquerda
     setPace(`${String(paceMinutes).padStart(2, '0')}:${String(paceSeconds).padStart(2, '0')}`);
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    // TRATAMENTO DO PREÇO: Mesma lógica para evitar o erro 22P02
+    const numericPrice = price.trim() === '' ? null : parseFloat(price.replace(',', '.'));
 
     try {
       const { error } = await supabase
@@ -78,6 +85,9 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
           status: status,
           finish_time: status === 'Concluído' ? finishTime : null,
           pace: status === 'Concluído' ? pace : null,
+          registration_link: registrationLink,
+          event_location: eventLocation,
+          price: numericPrice,
         })
         .eq('id', race.id);
 
@@ -118,7 +128,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
       <div className="bg-race-card w-full max-w-md rounded-3xl p-6 border border-white/10 shadow-2xl overflow-y-auto max-h-[90vh]">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-black uppercase italic text-white">Editar Prova</h2>
-          <button onClick={onClose} className="text-gray-400"><X size={24} /></button>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X size={24} /></button>
         </div>
 
         <form onSubmit={handleUpdate} className="flex flex-col gap-4">
@@ -129,13 +139,54 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
             <select 
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt"
+              className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors"
             >
               <option value="A Planejar">A Planejar</option>
               <option value="Inscrito">Inscrito</option>
               <option value="Concluído">Concluído</option>
             </select>
           </div>
+
+          {status !== 'Concluído' && (
+             <div className="flex flex-col gap-4">
+               <div>
+                 <label className="text-[10px] font-bold uppercase text-gray-500 tracking-widest mb-1 flex items-center gap-1">
+                   <Link2 size={12} /> Link de Inscrição
+                 </label>
+                 <input 
+                   type="url" value={registrationLink}
+                   onChange={(e) => setRegistrationLink(e.target.value)}
+                   className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors text-sm"
+                   placeholder="https://..."
+                 />
+               </div>
+               
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Local do Evento</label>
+                    <input 
+                      type="text" value={eventLocation}
+                      onChange={(e) => setEventLocation(e.target.value)}
+                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none transition-colors"
+                      placeholder="Ex: Olinda - PE"
+                    />
+                 </div>
+                 <div>
+                    <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Valor</label>
+                    {/* Campo com R$ Fixo */}
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">R$</span>
+                      <input 
+                        type="text" value={price}
+                        onChange={(e) => setPrice(e.target.value)}
+                        className="w-full bg-background border border-white/10 rounded-xl p-3 pl-10 text-white outline-none transition-colors focus:border-race-volt"
+                        placeholder="0,00"
+                      />
+                    </div>
+                 </div>
+              </div>
+             </div>
+          )}
 
           {status === 'Concluído' && (
             <div className="grid grid-cols-2 gap-4 p-4 bg-race-volt/5 border border-race-volt/20 rounded-2xl animate-in fade-in slide-in-from-top-2">
@@ -147,7 +198,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
                   type="text" 
                   value={finishTime}
                   onChange={(e) => setFinishTime(e.target.value)}
-                  className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt"
+                  className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors"
                   placeholder="00:55:00"
                 />
               </div>
@@ -156,7 +207,6 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
                   <label className="text-[10px] font-bold uppercase text-race-volt flex items-center gap-1">
                     <Zap size={12} /> Pace (min/km)
                   </label>
-                  {/* Botão Calculadora Automática */}
                   <button 
                     type="button" 
                     onClick={handleCalculatePace}
@@ -169,7 +219,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
                   type="text" 
                   value={pace}
                   onChange={(e) => setPace(e.target.value)}
-                  className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt"
+                  className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors"
                   placeholder="05:30"
                 />
               </div>
@@ -183,7 +233,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
                 type="text" 
                 value={kitLocation}
                 onChange={(e) => setKitLocation(e.target.value)}
-                className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt"
+                className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors"
               />
             </div>
 
@@ -193,7 +243,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
                 type="text" 
                 value={kitDatetime}
                 onChange={(e) => setKitDatetime(e.target.value)}
-                className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt"
+                className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors"
                 placeholder="Ex: 14/08 às 10h"
               />
             </div>
@@ -212,7 +262,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
             <button 
               type="submit" 
               disabled={loading}
-              className="flex-2 bg-race-volt text-black font-black uppercase italic rounded-xl p-4 flex items-center justify-center gap-2 shadow-lg shadow-race-volt/10"
+              className="flex-2 bg-race-volt text-black font-black uppercase italic rounded-xl p-4 flex items-center justify-center gap-2 shadow-lg shadow-race-volt/10 hover:bg-opacity-90 transition-opacity"
             >
               <Save size={20} />
               {loading ? '...' : 'Salvar'}
