@@ -199,7 +199,7 @@ export default function Home() {
           <div className="relative z-10 w-full">
             <div className="flex items-center justify-between mb-2">
               <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-black uppercase italic">
-                {upcomingRace.status === 'Inscrito' ? 'Squad Confirmado' : 'Próxima Prova'}
+                {upcomingRace.status === 'Inscrito' ? 'Pelotão Confirmado' : 'Próxima Prova'}
               </span>
               
               {countdown && (
@@ -260,7 +260,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Amigos (Squad) */}
+      {/* Amigos (Pelotão) */}
       <h3 className="text-xs font-bold uppercase text-gray-500 mb-4 tracking-widest">Amigos na Pista</h3>
       <div className="flex gap-4 mb-10 overflow-x-auto pb-2 scrollbar-hide">
         {profiles.length > 0 ? (
@@ -273,7 +273,7 @@ export default function Home() {
             </div>
           ))
         ) : (
-          <p className="text-gray-600 text-[10px] italic">Buscando o Squad...</p>
+          <p className="text-gray-600 text-[10px] italic">Buscando o Pelotão...</p>
         )}
       </div>
 

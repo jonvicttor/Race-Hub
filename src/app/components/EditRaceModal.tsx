@@ -16,7 +16,7 @@ interface Race {
   pace?: string;
   registration_link?: string; 
   event_location?: string;
-  price?: string | number | null; // Corrigido para remover o 'any'
+  price?: string | number | null; 
 }
 
 interface EditRaceModalProps {
@@ -27,6 +27,15 @@ interface EditRaceModalProps {
 
 export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
   const [loading, setLoading] = useState(false);
+  
+  // Transforma a data do banco (AAAA-MM-DD) para DD/MM/AAAA no input
+  const initialDateParts = race.date ? race.date.split('-') : [];
+  const initialDate = initialDateParts.length === 3 ? `${initialDateParts[2]}/${initialDateParts[1]}/${initialDateParts[0]}` : '';
+
+  const [name, setName] = useState(race.name || '');
+  const [date, setDate] = useState(initialDate);
+  const [distance, setDistance] = useState(race.distance || '');
+
   const [kitLocation, setKitLocation] = useState(race.kit_location || '');
   const [kitDatetime, setKitDatetime] = useState(race.kit_datetime || '');
   const [status, setStatus] = useState(race.status || 'A Planejar');
@@ -36,17 +45,23 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
   const [registrationLink, setRegistrationLink] = useState(race.registration_link || '');
   const [eventLocation, setEventLocation] = useState(race.event_location || '');
   
-  // Inicializa o preço. Se vier do banco, garante que vira string com vírgula para o input
   const initialPrice = race.price ? String(race.price).replace('.', ',') : '';
   const [price, setPrice] = useState(initialPrice);
 
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, ''); 
+    if (value.length > 2) value = value.substring(0, 2) + '/' + value.substring(2);
+    if (value.length > 5) value = value.substring(0, 5) + '/' + value.substring(5, 9);
+    setDate(value);
+  };
+
   const handleCalculatePace = () => {
-    if (!finishTime || !race.distance) {
-      alert("Preencha o Tempo Final primeiro (ex: 00:55:00 ou 55:00)");
+    if (!finishTime || !distance) {
+      alert("Preencha o Tempo Final e a Distância primeiro (ex: 00:55:00 ou 55:00)");
       return;
     }
 
-    const distMatch = race.distance.match(/[\d.]+/);
+    const distMatch = distance.match(/[\d.]+/);
     if (!distMatch) return;
     const distKm = parseFloat(distMatch[0]);
 
@@ -73,13 +88,23 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
     e.preventDefault();
     setLoading(true);
 
-    // TRATAMENTO DO PREÇO: Mesma lógica para evitar o erro 22P02
+    if (date.length !== 10) {
+      alert('Por favor, preencha a data completa no formato DD/MM/AAAA.');
+      setLoading(false);
+      return;
+    }
+
+    const [day, month, year] = date.split('/');
+    const formattedDateForDB = `${year}-${month}-${day}`;
     const numericPrice = price.trim() === '' ? null : parseFloat(price.replace(',', '.'));
 
     try {
       const { error } = await supabase
         .from('races')
         .update({
+          name: name,
+          date: formattedDateForDB,
+          distance: distance,
           kit_location: kitLocation,
           kit_datetime: kitDatetime,
           status: status,
@@ -132,7 +157,32 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
         </div>
 
         <form onSubmit={handleUpdate} className="flex flex-col gap-4">
-          <p className="text-race-volt font-bold text-sm uppercase">{race.name} - {race.distance}</p>
+          
+          {/* CAMPOS LIBERADOS PARA EDIÇÃO 👇 */}
+          <div>
+            <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Nome da Prova</label>
+            <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Data</label>
+              <input 
+                type="text" 
+                required 
+                maxLength={10}
+                value={date} 
+                onChange={handleDateChange} 
+                className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors placeholder:text-gray-600" 
+                placeholder="DD/MM/AAAA"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Distância</label>
+              <input type="text" required value={distance} onChange={(e) => setDistance(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" placeholder="Ex: 21KM" />
+            </div>
+          </div>
+          {/* 👆 FIM DOS CAMPOS LIBERADOS */}
           
           <div>
             <label className="text-xs font-bold uppercase text-gray-500 block mb-1">Status da Prova</label>
@@ -173,7 +223,6 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
                  </div>
                  <div>
                     <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Valor</label>
-                    {/* Campo com R$ Fixo */}
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">R$</span>
                       <input 

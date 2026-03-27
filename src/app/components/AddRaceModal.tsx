@@ -21,6 +21,19 @@ export function AddRaceModal() {
   const [pace, setPace] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, ''); 
+    
+    if (value.length > 2) {
+      value = value.substring(0, 2) + '/' + value.substring(2);
+    }
+    if (value.length > 5) {
+      value = value.substring(0, 5) + '/' + value.substring(5, 9);
+    }
+    
+    setDate(value);
+  };
+
   const handleCalculatePace = () => {
     if (!finishTime || !distance) {
       alert("Preencha o Tempo Final e a Distância primeiro (ex: 00:55:00 e 10KM)");
@@ -54,7 +67,12 @@ export function AddRaceModal() {
     e.preventDefault();
     setLoading(true);
 
-    // BUSCA O USUÁRIO LOGADO ANTES DE SALVAR
+    if (date.length !== 10) {
+      alert('Por favor, preencha a data completa no formato DD/MM/AAAA.');
+      setLoading(false);
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -62,6 +80,9 @@ export function AddRaceModal() {
       setLoading(false);
       return;
     }
+
+    const [day, month, year] = date.split('/');
+    const formattedDateForDB = `${year}-${month}-${day}`;
 
     const numericPrice = price.trim() === '' ? null : parseFloat(price.replace(',', '.'));
     let certificateUrl = null;
@@ -90,12 +111,11 @@ export function AddRaceModal() {
         certificateUrl = publicUrlData.publicUrl;
       }
 
-      // SALVA NO BANCO VINCULANDO A CORRIDA AO ID DO USUÁRIO LOGADO
       const { error } = await supabase.from('races').insert([
         {
-          user_id: user.id, // VINCULAÇÃO AQUI
+          user_id: user.id, 
           name,
-          date,
+          date: formattedDateForDB, 
           distance,
           kit_location: location,
           status,
@@ -148,7 +168,10 @@ export function AddRaceModal() {
           <div className="bg-race-card w-full max-w-md rounded-3xl p-6 border border-white/10 shadow-2xl overflow-y-auto max-h-[90vh]">
             
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black uppercase italic text-white">Nova Corrida</h2>
+              {/* TÍTULO DINÂMICO AQUI */}
+              <h2 className="text-xl font-black uppercase italic text-white">
+                {status === 'Concluído' ? 'Registrar Conquista' : 'Nova Corrida'}
+              </h2>
               <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white transition-colors">
                 <X size={24} />
               </button>
@@ -163,7 +186,15 @@ export function AddRaceModal() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Data</label>
-                  <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white scheme-dark outline-none transition-colors" />
+                  <input 
+                    type="text" 
+                    required 
+                    maxLength={10}
+                    value={date} 
+                    onChange={handleDateChange} 
+                    className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors placeholder:text-gray-600" 
+                    placeholder="DD/MM/AAAA"
+                  />
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Distância</label>
@@ -239,8 +270,9 @@ export function AddRaceModal() {
                 </>
               )}
 
+              {/* BOTÃO DINÂMICO AQUI */}
               <button type="submit" disabled={loading} className="w-full bg-race-volt text-black font-black uppercase italic rounded-xl p-4 mt-2 hover:bg-opacity-90 disabled:opacity-50 transition-opacity">
-                {loading ? 'Salvando Prova...' : 'Adicionar ao Calendário'}
+                {loading ? 'Processando...' : (status === 'Concluído' ? 'Adicionar à Galeria' : 'Adicionar ao Calendário')}
               </button>
             </form>
           </div>

@@ -150,7 +150,8 @@ export default function ProfilePage() {
           </div>
         )}
         
-        <p className="text-race-volt font-medium text-sm tracking-widest uppercase mt-1">Atleta Squad</p>
+        {/* TEXTO ATUALIZADO AQUI */}
+        <p className="text-race-volt font-medium text-sm tracking-widest uppercase mt-1">Atleta Pelotão</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-10">
