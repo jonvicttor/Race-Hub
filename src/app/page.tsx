@@ -28,18 +28,13 @@ interface Profile {
   avatar_url: string;
 }
 
-// Função inteligente corrigida e com tipagem segura para o TypeScript
 const formatPrice = (priceStr?: string | number | null) => {
   if (priceStr === null || priceStr === undefined || priceStr === '') return '';
   
-  // Força virar string para não dar erro se vier número do banco
   const str = String(priceStr);
-  
-  // Verifica se tem algum número
   const hasNumbers = /\d/.test(str);
   if (!hasNumbers) return str;
 
-  // Limpa e formata
   let cleanStr = str.replace(/[^\d.,]/g, '');
   
   if (cleanStr.includes(',')) {
@@ -60,6 +55,7 @@ export default function Home() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [editingRace, setEditingRace] = useState<Race | null>(null);
+  const [countdown, setCountdown] = useState<string>('');
   const router = useRouter();
 
   const refreshData = useCallback(async () => {
@@ -122,6 +118,39 @@ export default function Home() {
   const today = new Date().toISOString().split('T')[0];
   const upcomingRace = races?.find(race => race.date >= today);
 
+  // --- MOTOR DA CONTAGEM REGRESSIVA ---
+  useEffect(() => {
+    if (!upcomingRace) return;
+
+    const targetDate = new Date(`${upcomingRace.date}T00:00:00`);
+
+    const updateTimer = () => {
+      const now = new Date();
+      const difference = targetDate.getTime() - now.getTime();
+
+      if (difference <= 0) {
+        setCountdown('É HOJE! Pra cima! 🏃‍♂️💨');
+        return;
+      }
+
+      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((difference / 1000 / 60) % 60);
+      const seconds = Math.floor((difference / 1000) % 60);
+
+      const h = String(hours).padStart(2, '0');
+      const m = String(minutes).padStart(2, '0');
+      const s = String(seconds).padStart(2, '0');
+
+      setCountdown(`${days}d ${h}h ${m}m ${s}s`);
+    };
+
+    updateTimer(); 
+    const intervalId = setInterval(updateTimer, 1000); 
+
+    return () => clearInterval(intervalId); 
+  }, [upcomingRace]);
+
   return (
     <main className="min-h-screen bg-background text-foreground p-6 font-sans relative pb-24">
       {/* Header */}
@@ -158,13 +187,25 @@ export default function Home() {
 
       {/* Card Destaque */}
       {upcomingRace ? (
-        <div className="bg-race-volt p-6 rounded-4xl text-black mb-8 relative overflow-hidden">
-          <div className="relative z-10">
-            <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-black uppercase italic">
-              {upcomingRace.status === 'Inscrito' ? 'Squad Confirmado' : 'Próxima Prova'}
-            </span>
-            <h2 className="text-3xl font-black uppercase italic mt-4 leading-none">{upcomingRace.name}</h2>
-            <div className="flex gap-4 mt-6">
+        <div className="bg-race-volt p-6 rounded-4xl text-black mb-8 relative overflow-hidden shadow-lg shadow-race-volt/10 flex flex-col items-start">
+          <div className="relative z-10 w-full">
+            <div className="flex items-center justify-between mb-2">
+              <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-black uppercase italic">
+                {upcomingRace.status === 'Inscrito' ? 'Squad Confirmado' : 'Próxima Prova'}
+              </span>
+              
+              {/* Cronômetro Discreto */}
+              {countdown && (
+                <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest flex items-center gap-1.5">
+                  <Timer size={10} strokeWidth={3} />
+                  {countdown}
+                </span>
+              )}
+            </div>
+
+            <h2 className="text-3xl font-black uppercase italic mt-2 leading-none">{upcomingRace.name}</h2>
+            
+            <div className="flex gap-4 mt-4">
               <div className="flex items-center gap-1 font-bold text-sm leading-none">
                 <Calendar size={16} /> {upcomingRace.date.split('-')[2]}/{upcomingRace.date.split('-')[1]}
               </div>
@@ -176,26 +217,31 @@ export default function Home() {
             {/* Informações Extras no Destaque */}
             <div className="mt-4 flex flex-wrap gap-2">
               {upcomingRace.event_location && (
-                <div className="flex items-center gap-1 bg-black/10 px-2 py-1 rounded text-xs font-bold">
-                  <Map size={12} /> {upcomingRace.event_location}
+                <div className="inline-flex items-start gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold max-w-full">
+                  <Map size={14} className="shrink-0 mt-0.5" /> 
+                  {/* Atualização do break-words para wrap-break-word */}
+                  <span className="leading-snug wrap-break-word">{upcomingRace.event_location}</span>
                 </div>
               )}
               {upcomingRace.price && (
-                <div className="flex items-center gap-1 bg-black/10 px-2 py-1 rounded text-xs font-bold text-black">
+                <div className="inline-flex items-center gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold text-black max-w-full">
                   {formatPrice(upcomingRace.price)}
                 </div>
               )}
             </div>
 
+            {/* Botão de inscrição */}
             {upcomingRace.registration_link && upcomingRace.status === 'A Planejar' && (
-              <a 
-                href={upcomingRace.registration_link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 inline-flex items-center gap-2 bg-black text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:scale-105 transition-transform"
-              >
-                <Link2 size={14} /> Inscrever-se
-              </a>
+              <div className="block mt-5">
+                <a 
+                  href={upcomingRace.registration_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-transform"
+                >
+                  <Link2 size={14} /> Inscrever-se
+                </a>
+              </div>
             )}
           </div>
           <div className="absolute -right-4 -bottom-4 opacity-10">
@@ -214,7 +260,7 @@ export default function Home() {
         {profiles.length > 0 ? (
           profiles.map((p) => (
             <div key={p.id} className="flex flex-col items-center gap-2 min-w-14">
-              <div className="w-14 h-14 rounded-2xl bg-race-card border border-white/10 flex items-center justify-center font-bold text-race-volt text-xl uppercase">
+              <div className="w-14 h-14 rounded-2xl bg-race-card border border-white/10 flex items-center justify-center font-bold text-race-volt text-xl uppercase shadow-sm">
                 {p.username?.[0] || '?'}
               </div>
               <span className="text-[10px] font-medium text-gray-400">{p.username}</span>
