@@ -168,7 +168,7 @@ export function AddRaceModal() {
           <div className="bg-race-card w-full max-w-md rounded-3xl p-6 border border-white/10 shadow-2xl overflow-y-auto max-h-[90vh]">
             
             <div className="flex justify-between items-center mb-6">
-              {/* TÍTULO DINÂMICO AQUI */}
+              {/* TÍTULO DINÂMICO AQUI 👇 */}
               <h2 className="text-xl font-black uppercase italic text-white">
                 {status === 'Concluído' ? 'Registrar Conquista' : 'Nova Corrida'}
               </h2>
@@ -270,7 +270,7 @@ export function AddRaceModal() {
                 </>
               )}
 
-              {/* BOTÃO DINÂMICO AQUI */}
+              {/* BOTÃO DINÂMICO AQUI 👇 */}
               <button type="submit" disabled={loading} className="w-full bg-race-volt text-black font-black uppercase italic rounded-xl p-4 mt-2 hover:bg-opacity-90 disabled:opacity-50 transition-opacity">
                 {loading ? 'Processando...' : (status === 'Concluído' ? 'Adicionar à Galeria' : 'Adicionar ao Calendário')}
               </button>
