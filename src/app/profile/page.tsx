@@ -3,8 +3,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, FileText, BarChart3, Activity, Target } from 'lucide-react';
+import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, FileText, BarChart3, Activity, Target, ChevronRight } from 'lucide-react';
 import { AddRaceModal } from '../components/AddRaceModal'; 
+import Image from 'next/image';
 
 interface Race {
   id: string;
@@ -22,6 +23,9 @@ interface Profile {
   id: string;
   username: string;
   monthly_goal?: number; 
+  gender?: 'M' | 'F'; 
+  is_owner?: boolean; 
+  is_pioneer?: boolean; 
 }
 
 interface ChartPoint {
@@ -33,18 +37,43 @@ interface ChartPoint {
   treinoKm: number;
 }
 
+// DEFINIÇÃO DAS PATENTES E INSÍGNIAS (Por Nível e Gênero)
+const getPatentData = (level: number, gender: 'M' | 'F') => {
+  if (level >= 60) return { 
+    name: 'Lenda do Pelotão', 
+    insignia: '/insignias/insignia_lenda.png' 
+  };
+  if (level >= 40) return { 
+    name: gender === 'F' ? 'Mestra do Asfalto' : 'Mestre do Asfalto', 
+    insignia: gender === 'F' ? '/insignias/insignia_mestra.png' : '/insignias/insignia_mestre.png' 
+  };
+  if (level >= 20) return { 
+    name: gender === 'F' ? 'Caçadora de RP' : 'Caçador de RP', 
+    insignia: gender === 'F' ? '/insignias/insignia_cacadora.png' : '/insignias/insignia_cacador.png' 
+  };
+  if (level >= 10) return { 
+    name: gender === 'F' ? 'Corredora Focada' : 'Corredor Focado', 
+    insignia: gender === 'F' ? '/insignias/insignia_focada.png' : '/insignias/insignia_focado.png' 
+  };
+  return { 
+    name: 'Iniciante do Asfalto', 
+    insignia: '/insignias/insignia_iniciante.png' 
+  };
+};
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [completedRaces, setCompletedRaces] = useState<Race[]>([]);
   
-  // Estados para edição do Nickname
   const [isEditing, setIsEditing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const [newGender, setNewGender] = useState<'M' | 'F'>('M');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Estados para edição da Meta Mensal
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [newGoal, setNewGoal] = useState('');
+
+  const [viewMode, setViewMode] = useState<'perfil' | 'provas' | 'treinos'>('perfil');
 
   const router = useRouter();
 
@@ -57,23 +86,14 @@ export default function ProfilePage() {
         return;
       }
 
-      const { data: p } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      const { data: r } = await supabase
-        .from('races')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'Concluído')
-        .order('date', { ascending: false });
+      const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      const { data: r } = await supabase.from('races').select('*').eq('user_id', user.id).eq('status', 'Concluído').order('date', { ascending: false });
 
       if (isMounted) {
         if (p) {
           setProfile(p);
           setNewUsername(p.username); 
+          setNewGender(p.gender || 'M');
           setNewGoal(p.monthly_goal?.toString() || '50'); 
         }
         if (r) {
@@ -86,8 +106,8 @@ export default function ProfilePage() {
     return () => { isMounted = false; };
   }, [router]);
 
-  const handleSaveUsername = async () => {
-    if (!profile || !newUsername.trim() || newUsername === profile.username) {
+  const handleSaveUsernameAndGender = async () => {
+    if (!profile || (!newUsername.trim() || newUsername === profile.username) && newGender === profile.gender) {
       setIsEditing(false);
       return;
     }
@@ -95,12 +115,7 @@ export default function ProfilePage() {
     setIsSaving(true);
 
     try {
-      const { data: existingUser } = await supabase
-        .from('profiles')
-        .select('id')
-        .ilike('username', newUsername.trim())
-        .neq('id', profile.id) 
-        .single();
+      const { data: existingUser } = await supabase.from('profiles').select('id').ilike('username', newUsername.trim()).neq('id', profile.id).single();
 
       if (existingUser) {
         alert('Este Nickname já está em uso por outro atleta. Escolha outro!');
@@ -108,18 +123,16 @@ export default function ProfilePage() {
         return;
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({ username: newUsername.trim() })
-        .eq('id', profile.id);
+      const { error } = await supabase.from('profiles').update({ username: newUsername.trim(), gender: newGender }).eq('id', profile.id);
 
       if (error) throw error;
 
-      setProfile({ ...profile, username: newUsername.trim() });
+      setProfile({ ...profile, username: newUsername.trim(), gender: newGender });
       setIsEditing(false);
+
     } catch (error) {
       console.error(error);
-      alert('Erro ao atualizar Nickname.');
+      alert('Erro ao atualizar Perfil.');
     } finally {
       setIsSaving(false);
     }
@@ -135,11 +148,7 @@ export default function ProfilePage() {
     }
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ monthly_goal: goalVal })
-        .eq('id', profile.id);
-
+      const { error } = await supabase.from('profiles').update({ monthly_goal: goalVal }).eq('id', profile.id);
       if (error) throw error;
 
       setProfile({ ...profile, monthly_goal: goalVal });
@@ -155,7 +164,6 @@ export default function ProfilePage() {
     return acc + km;
   }, 0);
 
-  // MÁGICA DA META MENSAL
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
   const currentMonthName = new Date().toLocaleString('pt-BR', { month: 'long' });
@@ -173,6 +181,59 @@ export default function ProfilePage() {
 
   const currentGoal = profile?.monthly_goal || 50;
   const progressPercent = Math.min((currentMonthKm / currentGoal) * 100, 100);
+
+  // MÁGICA DO XP (O Motor do RPG Hardcore)
+  const xpSystem = useMemo(() => {
+    const TREINO_XP_PER_KM = 100;
+    const PROVA_XP_PER_KM = 200; 
+    const RP_BONUS_XP = 1000;
+    const MONTHLY_GOAL_BONUS = 5000; 
+
+    let totalXp = 0;
+    const bestPacesByDistance: Record<string, number> = {};
+
+    completedRaces.forEach(race => {
+      const km = parseFloat(race.distance.replace(/[^\d.]/g, '')) || 0;
+      const isProva = race.activity_type !== 'treino';
+      let raceXp = km * (isProva ? PROVA_XP_PER_KM : TREINO_XP_PER_KM);
+
+      const paceString = race.pace ? race.pace.replace(' /km', '') : '';
+      const [min, sec] = paceString.split(':');
+      const paceInSeconds = (parseInt(min) * 60) + (parseInt(sec)) || 0;
+
+      if (paceInSeconds > 0) {
+        if (!bestPacesByDistance[km.toString()] || paceInSeconds < bestPacesByDistance[km.toString()]) {
+          bestPacesByDistance[km.toString()] = paceInSeconds;
+          raceXp += RP_BONUS_XP;
+        }
+      }
+      totalXp += raceXp;
+    });
+
+    if (progressPercent >= 100) {
+      totalXp += MONTHLY_GOAL_BONUS;
+    }
+
+    let currentLevel = 1;
+    let xpNeededForNext = 1000; 
+    let tempXp = totalXp;
+
+    while (tempXp >= xpNeededForNext) {
+      tempXp -= xpNeededForNext;
+      currentLevel++;
+      
+      if (currentLevel < 20) {
+        xpNeededForNext = 1000 + (currentLevel * 50); 
+      } else {
+        xpNeededForNext = 1000 + (currentLevel * 120); 
+      }
+    }
+
+    const levelProgressPercent = Math.min((tempXp / xpNeededForNext) * 100, 100);
+    const patentData = getPatentData(currentLevel, profile?.gender || 'M');
+
+    return { totalXp, currentLevel, tempXp, xpNeededForNext, levelProgressPercent, patentData };
+  }, [completedRaces, profile?.gender, progressPercent]);
 
   const { chartPoints, maxKm } = useMemo(() => {
     const points: ChartPoint[] = [];
@@ -206,7 +267,7 @@ export default function ProfilePage() {
         if (race.activity_type === 'treino') {
           match.treinoKm += km;
         } else {
-          match.provaKm += km; 
+          match.provaKm += km;
         }
 
         if (match.totalKm > highest) highest = match.totalKm;
@@ -248,250 +309,33 @@ export default function ProfilePage() {
     return { linePath: linePathD, areaPath: areaPathD, pointsCoords: coords };
   }, [chartPoints, maxKm, chartHeight, chartWidth]);
 
-  return (
-    <main className="min-h-screen bg-background text-foreground p-6 font-sans pb-24">
-      {/* HEADER */}
+  const listProvas = completedRaces.filter(r => r.activity_type !== 'treino');
+  const listTreinos = completedRaces.filter(r => r.activity_type === 'treino');
+
+  const renderList = (items: Race[], title: string) => (
+    <div className="animate-in slide-in-from-right-8 fade-in duration-300">
       <div className="flex items-center gap-4 mb-8">
         <button 
-          onClick={() => router.push('/')} 
+          onClick={() => setViewMode('perfil')} 
           className="p-2 bg-race-card rounded-xl border border-white/5 text-gray-400 hover:text-white"
         >
           <ChevronLeft size={24} />
         </button>
         <h1 className="text-xl font-black uppercase italic tracking-tighter">
-          Meu <span className="text-race-volt">Perfil</span>
+          Minhas <span className="text-race-volt">{title}</span>
         </h1>
       </div>
 
-      {/* PERFIL INFO */}
-      <div className="flex flex-col items-center mb-8">
-        <div className="w-24 h-24 rounded-full border-4 border-race-volt p-1 mb-4 shadow-xl shadow-race-volt/20">
-          <div className="w-full h-full bg-race-card rounded-full flex items-center justify-center text-3xl text-white font-black uppercase">
-            {profile?.username?.substring(0, 2) || 'JV'}
-          </div>
-        </div>
-
-        {isEditing ? (
-          <div className="flex items-center gap-2 mt-1">
-            <input 
-              type="text" 
-              value={newUsername}
-              onChange={(e) => setNewUsername(e.target.value)}
-              className="bg-background border border-race-volt text-white rounded-lg px-3 py-1 text-center font-bold uppercase outline-none w-40"
-              autoFocus
-            />
-            <button 
-              onClick={handleSaveUsername} 
-              disabled={isSaving} 
-              className="bg-race-volt text-black p-1.5 rounded-lg hover:scale-105 disabled:opacity-50 transition-transform"
-            >
-              <Check size={18} strokeWidth={3} />
-            </button>
-            <button 
-              onClick={() => { setIsEditing(false); setNewUsername(profile?.username || ''); }} 
-              className="bg-red-500/20 text-red-500 p-1.5 rounded-lg hover:bg-red-500 hover:text-white transition-colors"
-            >
-              <X size={18} strokeWidth={3} />
-            </button>
-          </div>
-        ) : (
-          <div 
-            className="flex items-center gap-2 mt-1 relative group cursor-pointer" 
-            onClick={() => setIsEditing(true)}
-          >
-            <h2 className="text-2xl font-bold text-white uppercase">{profile?.username}</h2>
-            <Edit2 size={16} className="text-gray-500 group-hover:text-race-volt transition-colors" />
-          </div>
-        )}
-        
-        <p className="text-race-volt font-medium text-sm tracking-widest uppercase mt-1">
-          Atleta Pelotão
-        </p>
-      </div>
-
-      {/* NOVO PAINEL DE META MENSAL */}
-      <div className="bg-race-card border border-white/5 rounded-3xl p-5 mb-4 relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-32 h-32 bg-race-volt/5 blur-3xl rounded-full"></div>
-        
-        <div className="flex justify-between items-start mb-4 relative z-10">
-          <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
-            <Target size={16} className="text-race-volt" /> Meta de {currentMonthName}
-          </h3>
-          
-          {isEditingGoal ? (
-            <div className="flex items-center gap-1">
-              <input 
-                type="number" 
-                value={newGoal} 
-                onChange={(e) => setNewGoal(e.target.value)} 
-                className="w-14 bg-background border border-race-volt rounded p-1 text-white text-xs text-center outline-none"
-                autoFocus
-              />
-              <button 
-                onClick={handleSaveGoal} 
-                className="text-race-volt bg-race-volt/20 p-1 rounded hover:bg-race-volt hover:text-black"
-              >
-                <Check size={14} />
-              </button>
-              <button 
-                onClick={() => setIsEditingGoal(false)} 
-                className="text-red-500 bg-red-500/20 p-1 rounded hover:bg-red-500 hover:text-white"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          ) : (
-            <button 
-              onClick={() => setIsEditingGoal(true)} 
-              className="text-[10px] font-bold uppercase tracking-widest text-gray-500 flex items-center gap-1 hover:text-race-volt transition-colors"
-            >
-              Editar <Edit2 size={10} />
-            </button>
-          )}
-        </div>
-
-        <div className="relative z-10">
-          <div className="flex items-end gap-1 mb-2">
-            <span className="text-3xl font-black italic leading-none">{currentMonthKm}</span>
-            <span className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">/ {currentGoal} KM</span>
-          </div>
-          
-          <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden mt-3 relative">
-            <div 
-              className="h-full bg-race-volt rounded-full transition-all duration-1000 ease-out relative"
-              style={{ width: `${progressPercent}%` }}
-            >
-              {/* ERRO CORRIGIDO AQUI: bg-linear-to-r no lugar de bg-gradient-to-r */}
-              <div className="absolute right-0 top-0 bottom-0 w-10 bg-linear-to-r from-transparent to-white/50 blur-[2px]"></div>
-            </div>
-          </div>
-          
-          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mt-3 text-right">
-            {progressPercent >= 100 
-              ? <span className="text-race-volt">Meta Atingida! 🔥</span> 
-              : `${Math.round(progressPercent)}% Concluído`}
-          </p>
-        </div>
-      </div>
-
-      {/* CARDS DE TOTAIS */}
-      <div className="grid grid-cols-2 gap-4 mb-10">
-        <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
-          <TrendingUp className="text-race-volt" size={24} />
-          <span className="text-3xl font-black italic">{completedRaces.length}</span>
-          <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Registros</span>
-        </div>
-        <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
-          <Route className="text-race-volt" size={24} />
-          <span className="text-3xl font-black italic">{totalKm}</span>
-          <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Km Totais</span>
-        </div>
-      </div>
-
-      {/* DASHBOARD: GRÁFICO DE EVOLUÇÃO */}
-      <div className="mb-10 bg-race-card border border-white/5 rounded-3xl p-5 pt-8">
-        <div className="flex justify-between items-start mb-10">
-          <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
-            <BarChart3 size={16} className="text-race-volt" /> Volume (6 meses)
-          </h3>
-        </div>
-        
-        {maxKm > 0 && chartPoints.length >= 2 ? (
-          <div className="h-40 relative">
-            <svg 
-              viewBox={`0 0 ${chartWidth} ${chartHeight}`} 
-              className="w-full h-full overflow-visible" 
-              preserveAspectRatio="none"
-            >
-              <defs>
-                <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#d1ff00" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#d1ff00" stopOpacity="0.01" />
-                </linearGradient>
-                <filter id="glow">
-                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-              </defs>
-
-              <line 
-                x1="0" y1={chartHeight * 0.5} 
-                x2={chartWidth} y2={chartHeight * 0.5} 
-                stroke="white" strokeOpacity="0.05" strokeWidth="1" 
-                vectorEffect="non-scaling-stroke" strokeDasharray="4,4" 
-              />
-              <line 
-                x1="0" y1={chartHeight} 
-                x2={chartWidth} y2={chartHeight} 
-                stroke="white" strokeOpacity="0.1" strokeWidth="1" 
-                vectorEffect="non-scaling-stroke" 
-              />
-
-              <path 
-                d={areaPath} 
-                fill="url(#areaGradient)" 
-                className="transition-all duration-500 ease-out"
-              />
-
-              <path 
-                d={linePath} 
-                fill="none" 
-                stroke="#d1ff00" 
-                strokeWidth="3" 
-                vectorEffect="non-scaling-stroke"
-                filter="url(#glow)"
-                className="transition-all duration-500 ease-out"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-
-            {pointsCoords.map((coord, index) => (
-              <div 
-                key={index} 
-                className="absolute flex flex-col items-center z-10"
-                style={{ left: `${coord.percentX}%`, top: `${coord.y}px`, transform: 'translate(-50%, -50%)' }}
-              >
-                {coord.totalKm > 0 && (
-                  <div className="absolute -top-7 flex items-baseline gap-0.5 pointer-events-none">
-                    <span className="text-sm font-black text-white">{coord.totalKm}</span>
-                    <span className="text-[9px] font-bold text-race-volt">KM</span>
-                  </div>
-                )}
-                
-                <div 
-                  className={`w-2.5 h-2.5 rounded-full border-2 border-background shadow-[0_0_8px_rgba(209,255,0,0.6)] ${coord.totalKm > 0 ? 'bg-race-volt' : 'bg-transparent border-white/20'}`}
-                ></div>
-              </div>
-            ))}
-
-            <div className="flex justify-between w-full absolute -bottom-6 px-1">
-              {chartPoints.map((p, i) => (
-                <span key={i} className={`text-[9px] font-bold uppercase tracking-wider ${p.totalKm > 0 ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {p.label}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-40 border border-dashed border-white/5 rounded-2xl text-gray-600 italic text-center p-6 text-sm">
-            Nenhum volume rodado nos últimos 6 meses.
-            A pista te aguarda!
-          </div>
-        )}
-      </div>
-
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Galeria de Conquistas</h3>
+        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">
+          {items.length} {title} Registradas
+        </h3>
         <AddRaceModal /> 
       </div>
-      
+
       <div className="flex flex-col gap-4">
-        {completedRaces.length > 0 ? (
-          completedRaces.map((race) => (
+        {items.length > 0 ? (
+          items.map((race) => (
             <div key={race.id} className="bg-race-volt/5 border border-race-volt/20 p-4 rounded-2xl flex items-start justify-between">
               <div className="flex items-center gap-4">
                 <div className="bg-race-volt/20 p-3 rounded-full text-race-volt shrink-0">
@@ -500,11 +344,12 @@ export default function ProfilePage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className="font-bold text-white uppercase leading-tight">{race.name}</h4>
-                    {race.activity_type === 'treino' && (
-                      <span className="text-[8px] bg-race-volt/20 text-race-volt px-1.5 py-0.5 rounded font-black uppercase tracking-widest">Treino</span>
-                    )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">{race.distance.toUpperCase()}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs text-gray-400">{race.distance.toUpperCase()}</p>
+                    <span className="text-[10px] text-gray-600 font-bold">•</span>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-widest">{race.date.split('-').reverse().join('/')}</p>
+                  </div>
                   
                   {race.certificate_url && (
                     <a 
@@ -530,6 +375,305 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+    </div>
+  );
+
+  return (
+    <main className="min-h-screen bg-background text-foreground p-6 font-sans pb-24">
+      
+      {viewMode === 'provas' && renderList(listProvas, 'Provas')}
+      {viewMode === 'treinos' && renderList(listTreinos, 'Treinos')}
+
+      {viewMode === 'perfil' && (
+        <div className="animate-in fade-in duration-300">
+          
+          <div className="flex items-center gap-4 mb-8">
+            <button 
+              onClick={() => router.push('/')} 
+              className="p-2 bg-race-card rounded-xl border border-white/5 text-gray-400 hover:text-white"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <h1 className="text-xl font-black uppercase italic tracking-tighter">
+              Meu <span className="text-race-volt">Perfil</span>
+            </h1>
+          </div>
+
+          <div className="flex flex-col items-center mb-8 relative">
+            <div className="w-28 h-28 rounded-full border-4 border-background p-1.5 mb-2 shadow-2xl shadow-race-volt/10 bg-race-volt/5 relative z-10 flex flex-col items-center justify-center">
+              <div className="flex flex-col items-center leading-none mt-2">
+                <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Nível</span>
+                <span className="text-6xl font-black italic text-white tracking-tighter">{xpSystem.currentLevel}</span>
+              </div>
+              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-baseline gap-0.5 bg-background border border-white/5 px-2.5 py-1 rounded-full text-center whitespace-nowrap">
+                <span className="text-[9px] font-black text-white">{Math.round(xpSystem.tempXp)}</span>
+                <span className="text-[8px] text-gray-600 font-bold uppercase tracking-wider">/</span>
+                <span className="text-[9px] font-black text-race-volt">{Math.round(xpSystem.xpNeededForNext)}<span className="text-[7px] not-italic font-bold">XP</span></span>
+              </div>
+            </div>
+
+            {isEditing ? (
+              <div className="flex flex-col items-center gap-3 mt-4">
+                <input 
+                  type="text" 
+                  value={newUsername} 
+                  onChange={(e) => setNewUsername(e.target.value)} 
+                  className="bg-background border border-race-volt text-white rounded-lg px-3 py-1 text-center font-bold uppercase outline-none w-48 text-2xl mb-1" 
+                  autoFocus 
+                />
+                
+                <div className="flex gap-2 w-full max-w-sm mb-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setNewGender('M')} 
+                    className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${newGender === 'M' ? 'bg-race-volt text-black' : 'text-gray-500 bg-white/5'}`}
+                  >
+                    Masculino
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setNewGender('F')} 
+                    className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors ${newGender === 'F' ? 'bg-race-volt text-black' : 'text-gray-500 bg-white/5'}`}
+                  >
+                    Feminino
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button onClick={handleSaveUsernameAndGender} disabled={isSaving} className="bg-race-volt text-black p-2 rounded-lg hover:scale-105 disabled:opacity-50 transition-transform"><Check size={20} strokeWidth={3} /></button>
+                  <button onClick={() => { setIsEditing(false); setNewUsername(profile?.username || ''); setNewGender(profile?.gender || 'M'); }} className="bg-red-500/20 text-red-500 p-2 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><X size={20} strokeWidth={3} /></button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-1.5 mt-2 relative group cursor-pointer" onClick={() => setIsEditing(true)}>
+                <h2 className="text-3xl font-black text-white uppercase tracking-tight">{profile?.username}</h2>
+                <div className="absolute top-1/2 -right-6 -translate-y-1/2"><Edit2 size={16} className="text-gray-500 group-hover:text-race-volt transition-colors" /></div>
+              </div>
+            )}
+
+            {/* BLOCO DE PATENTE E INSÍGNIAS (NA MESMA LINHA) */}
+            <div className="flex items-center justify-center mt-3">
+              {/* Nome da Patente */}
+              <span className="text-race-volt font-bold text-[11px] tracking-widest uppercase mr-2">
+                {xpSystem.patentData.name}
+              </span>
+
+              {/* Box de Insígnias */}
+              <div className="flex items-center gap-1.5">
+                {/* Insígnia de Nível */}
+                <div className="relative group cursor-help hover:scale-110 transition-transform" title={`Patente Atual: ${xpSystem.patentData.name}`}>
+                  <Image src={xpSystem.patentData.insignia} alt="Nível Insignia" width={28} height={28} className="relative shrink-0" />
+                </div>
+
+                {/* Insígnias Especiais com separador vertical */}
+                {(profile?.is_owner || profile?.is_pioneer) && (
+                  <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 ml-1">
+                    {profile?.is_owner && (
+                      <div className="relative group cursor-help hover:scale-110 transition-transform" title="CEO & Desenvolvedor">
+                        <Image src="/insignias/insignia_ceo_dev.png" alt="Jones CEO/Dev" width={28} height={28} className="relative shrink-0" />
+                      </div>
+                    )}
+                    {profile?.is_pioneer && (
+                      <div className="relative group cursor-help hover:scale-110 transition-transform" title="Atleta Pioneiro">
+                        <Image src={profile.gender === 'F' ? '/insignias/insignia_pioneira.png' : '/insignias/insignia_pioneiro.png'} alt="Pioneiro" width={28} height={28} className="relative shrink-0" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="w-full max-w-md h-1.5 bg-white/5 rounded-full overflow-hidden mt-6 relative shadow-inner">
+                <div className="h-full bg-race-volt rounded-full transition-all duration-1000 ease-out relative" style={{ width: `${xpSystem.levelProgressPercent}%` }}>
+                  <div className="absolute right-0 top-0 bottom-0 w-10 bg-linear-to-r from-transparent to-white/50 blur-[1px]"></div>
+                </div>
+            </div>
+          </div>
+
+          <div className="bg-race-card border border-white/5 rounded-3xl p-5 mb-4 relative overflow-hidden">
+            <div className="absolute right-0 top-0 w-32 h-32 bg-race-volt/5 blur-3xl rounded-full"></div>
+            
+            <div className="flex justify-between items-start mb-4 relative z-10">
+              <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
+                <Target size={16} className="text-race-volt" /> Meta de {currentMonthName}
+              </h3>
+              {isEditingGoal ? (
+                <div className="flex items-center gap-1">
+                  <input 
+                    type="number" 
+                    value={newGoal} 
+                    onChange={(e) => setNewGoal(e.target.value)} 
+                    className="w-14 bg-background border border-race-volt rounded p-1 text-white text-xs text-center outline-none" 
+                    autoFocus 
+                  />
+                  <button 
+                    onClick={handleSaveGoal} 
+                    className="text-race-volt bg-race-volt/20 p-1 rounded hover:bg-race-volt hover:text-black"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button 
+                    onClick={() => setIsEditingGoal(false)} 
+                    className="text-red-500 bg-red-500/20 p-1 rounded hover:bg-red-500 hover:text-white"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => setIsEditingGoal(true)} 
+                  className="text-[10px] font-bold uppercase tracking-widest text-gray-500 flex items-center gap-1 hover:text-race-volt transition-colors"
+                >
+                  Editar <Edit2 size={10} />
+                </button>
+              )}
+            </div>
+            
+            <div className="relative z-10">
+              <div className="flex items-end gap-1 mb-2">
+                <span className="text-3xl font-black italic leading-none">{currentMonthKm}</span>
+                <span className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">/ {currentGoal} KM</span>
+              </div>
+              
+              <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden mt-3 relative">
+                <div 
+                  className="h-full bg-race-volt rounded-full transition-all duration-1000 ease-out relative" 
+                  style={{ width: `${progressPercent}%` }}
+                >
+                  <div className="absolute right-0 top-0 bottom-0 w-10 bg-linear-to-r from-transparent to-white/50 blur-[2px]"></div>
+                </div>
+              </div>
+              
+              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mt-3 text-right">
+                {progressPercent >= 100 ? <span className="text-race-volt">Meta Atingida! 🔥 (+5000 XP)</span> : `${Math.round(progressPercent)}% Concluído`}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-10">
+            <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
+              <TrendingUp className="text-race-volt" size={24} />
+              <span className="text-3xl font-black italic">{completedRaces.length}</span>
+              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Registros</span>
+            </div>
+            <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
+              <Route className="text-race-volt" size={24} />
+              <span className="text-3xl font-black italic">{totalKm}</span>
+              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Km Totais</span>
+            </div>
+          </div>
+
+          <div className="mb-10 bg-race-card border border-white/5 rounded-3xl p-5 pt-8">
+            <div className="flex justify-between items-start mb-10">
+              <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
+                <BarChart3 size={16} className="text-race-volt" /> Volume (6 meses)
+              </h3>
+            </div>
+            
+            {maxKm > 0 && chartPoints.length >= 2 ? (
+              <div className="h-40 relative">
+                <svg 
+                  viewBox={`0 0 ${chartWidth} ${chartHeight}`} 
+                  className="w-full h-full overflow-visible" 
+                  preserveAspectRatio="none"
+                >
+                  <defs>
+                    <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#d1ff00" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#d1ff00" stopOpacity="0.01" />
+                    </linearGradient>
+                    <filter id="glow">
+                      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                      <feMerge>
+                        <feMergeNode in="coloredBlur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  
+                  <line x1="0" y1={chartHeight * 0.5} x2={chartWidth} y2={chartHeight * 0.5} stroke="white" strokeOpacity="0.05" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="4,4" />
+                  <line x1="0" y1={chartHeight} x2={chartWidth} y2={chartHeight} stroke="white" strokeOpacity="0.1" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                  
+                  <path d={areaPath} fill="url(#areaGradient)" className="transition-all duration-500 ease-out" />
+                  <path d={linePath} fill="none" stroke="#d1ff00" strokeWidth="3" vectorEffect="non-scaling-stroke" filter="url(#glow)" className="transition-all duration-500 ease-out" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                
+                {pointsCoords.map((coord, index) => (
+                  <div key={index} className="absolute flex flex-col items-center z-10" style={{ left: `${coord.percentX}%`, top: `${coord.y}px`, transform: 'translate(-50%, -50%)' }}>
+                    {coord.totalKm > 0 && (
+                      <div className="absolute -top-7 flex items-baseline gap-0.5 pointer-events-none">
+                        <span className="text-sm font-black text-white">{coord.totalKm}</span>
+                        <span className="text-[9px] font-bold text-race-volt">KM</span>
+                      </div>
+                    )}
+                    <div className={`w-2.5 h-2.5 rounded-full border-2 border-background shadow-[0_0_8px_rgba(209,255,0,0.6)] ${coord.totalKm > 0 ? 'bg-race-volt' : 'bg-transparent border-white/20'}`}></div>
+                  </div>
+                ))}
+                
+                <div className="flex justify-between w-full absolute -bottom-6 px-1">
+                  {chartPoints.map((p, i) => (
+                    <span key={i} className={`text-[9px] font-bold uppercase tracking-wider ${p.totalKm > 0 ? 'text-gray-300' : 'text-gray-600'}`}>{p.label}</span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-40 border border-dashed border-white/5 rounded-2xl text-gray-600 italic text-center p-6 text-sm">
+                Nenhum volume rodado nos últimos 6 meses. A pista te aguarda!
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-[10px] font-bold uppercase text-gray-500 tracking-widest flex items-center gap-1.5">
+              <Activity size={12} className="text-race-volt" /> Pastas de Atividades
+            </h3>
+            <AddRaceModal /> 
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <button 
+              onClick={() => setViewMode('provas')}
+              className="bg-linear-to-br from-race-card to-background border border-white/5 hover:border-race-volt/50 rounded-3xl p-5 flex flex-col items-start gap-4 transition-all group relative overflow-hidden"
+            >
+              <div className="absolute right-0 top-0 w-20 h-20 bg-race-volt/5 blur-2xl rounded-full"></div>
+              <div className="w-10 h-10 rounded-full bg-race-volt/10 flex items-center justify-center text-race-volt group-hover:scale-110 transition-transform relative z-10">
+                <Medal size={20} />
+              </div>
+              <div className="text-left w-full relative z-10 leading-none">
+                <h4 className="text-2xl font-black italic text-white mb-1">{listProvas.length}</h4>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Provas Oficiais</p>
+              </div>
+              <div className="w-full flex items-center justify-between mt-2 pt-4 border-t border-white/5 relative z-10">
+                <span className="text-[9px] text-gray-400 uppercase tracking-widest truncate max-w-[80%]">
+                  {listProvas.length > 0 ? listProvas[0].name : 'Nenhuma Prova'}
+                </span>
+                <ChevronRight size={12} className="text-race-volt" />
+              </div>
+            </button>
+
+            <button 
+              onClick={() => setViewMode('treinos')}
+              className="bg-linear-to-br from-race-card to-background border border-white/5 hover:border-race-volt/50 rounded-3xl p-5 flex flex-col items-start gap-4 transition-all group relative overflow-hidden"
+            >
+              <div className="absolute right-0 top-0 w-20 h-20 bg-race-volt/5 blur-2xl rounded-full"></div>
+              <div className="w-10 h-10 rounded-full bg-race-volt/10 flex items-center justify-center text-race-volt group-hover:scale-110 transition-transform relative z-10">
+                <Activity size={20} />
+              </div>
+              <div className="text-left w-full relative z-10 leading-none">
+                <h4 className="text-2xl font-black italic text-white mb-1">{listTreinos.length}</h4>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Treinos Diários</p>
+              </div>
+              <div className="w-full flex items-center justify-between mt-2 pt-4 border-t border-white/5 relative z-10">
+                <span className="text-[9px] text-gray-400 uppercase tracking-widest">
+                  {listTreinos.length > 0 ? `Último: ${listTreinos[0].distance.toUpperCase()}` : 'Nenhum Treino'}
+                </span>
+                <ChevronRight size={12} className="text-race-volt" />
+              </div>
+            </button>
+          </div>
+          
+        </div>
+      )}
     </main>
   );
 }
