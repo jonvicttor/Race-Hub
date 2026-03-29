@@ -8,7 +8,7 @@ import { AddRaceModal } from './components/AddRaceModal';
 import { EditRaceModal } from './components/EditRaceModal';
 import { AddFriendModal } from './components/AddFriendModal'; 
 import { ChallengeModal } from './components/ChallengeModal'; 
-import { Leaderboard } from './components/Leaderboard'; // IMPORTAÇÃO DO NOVO COMPONENTE
+import { Leaderboard } from './components/Leaderboard'; 
 
 interface Race {
   id: string;
@@ -62,6 +62,16 @@ export default function Home() {
   const [challengingRace, setChallengingRace] = useState<Race | null>(null); 
   const [countdown, setCountdown] = useState<string>('');
   const router = useRouter();
+
+  // LÓGICA DE SAUDAÇÃO DINÂMICA
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'BOM DIA';
+    if (hour >= 12 && hour < 18) return 'BOA TARDE';
+    return 'BOA NOITE';
+  };
+
+  const greeting = getGreeting();
 
   const refreshData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -231,8 +241,9 @@ export default function Home() {
       {/* Header */}
       <div className="flex justify-between items-center mb-10">
         <div>
+          {/* SAUDAÇÃO DINÂMICA AQUI 👇 */}
           <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">
-            Bom dia, {userProfile?.username || 'Atleta'}
+            {greeting}, {userProfile?.username || 'ATLETA'}
           </p>
           <h1 className="text-2xl font-black italic uppercase tracking-tighter">
             Race <span className="text-race-volt">Hub</span>
@@ -353,12 +364,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* INSERÇÃO DO LEADERBOARD AQUI 👇 */}
+      {/* LEADERBOARD */}
       <Leaderboard />
 
       {/* Amigos (Pelotão) */}
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Amigos na Pista</h3>
+        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Pelotão</h3>
         <AddFriendModal />
       </div>
 
@@ -377,9 +388,9 @@ export default function Home() {
         )}
       </div>
 
-      {/* Calendário e Resultados + Botão Novo */}
+      {/* Calendário e Resultados */}
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Calendário e Resultados</h3>
+        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Calendário</h3>
         <AddRaceModal />
       </div>
       

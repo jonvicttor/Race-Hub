@@ -74,6 +74,9 @@ export default function ProfilePage() {
   const [newGoal, setNewGoal] = useState('');
 
   const [viewMode, setViewMode] = useState<'perfil' | 'provas' | 'treinos'>('perfil');
+  
+  // NOVO ESTADO: Controla a insígnia que está em zoom
+  const [selectedInsignia, setSelectedInsignia] = useState<{ src: string, title: string } | null>(null);
 
   const router = useRouter();
 
@@ -182,12 +185,25 @@ export default function ProfilePage() {
   const currentGoal = profile?.monthly_goal || 50;
   const progressPercent = Math.min((currentMonthKm / currentGoal) * 100, 100);
 
-  // MÁGICA DO XP (O Motor do RPG Hardcore)
+  // MÁGICA DO XP (O Motor do RPG Hardcore Inteligente)
   const xpSystem = useMemo(() => {
     const TREINO_XP_PER_KM = 100;
     const PROVA_XP_PER_KM = 200; 
     const RP_BONUS_XP = 1000;
-    const MONTHLY_GOAL_BONUS = 5000; 
+
+    // MATEMÁTICA NOVA: Bônus Escalonado pela Dificuldade da Meta
+    let earnedBonus = 0;
+    if (currentGoal <= 50) {
+      earnedBonus = 1000;
+    } else if (currentGoal <= 100) {
+      earnedBonus = 2000;
+    } else if (currentGoal <= 200) {
+      earnedBonus = 3000;
+    } else if (currentGoal <= 300) {
+      earnedBonus = 4000;
+    } else {
+      earnedBonus = 5000;
+    }
 
     let totalXp = 0;
     const bestPacesByDistance: Record<string, number> = {};
@@ -210,8 +226,9 @@ export default function ProfilePage() {
       totalXp += raceXp;
     });
 
+    // Se bateu 100% da meta, injeta a quantia dinâmica que calculamos lá em cima
     if (progressPercent >= 100) {
-      totalXp += MONTHLY_GOAL_BONUS;
+      totalXp += earnedBonus;
     }
 
     let currentLevel = 1;
@@ -232,8 +249,9 @@ export default function ProfilePage() {
     const levelProgressPercent = Math.min((tempXp / xpNeededForNext) * 100, 100);
     const patentData = getPatentData(currentLevel, profile?.gender || 'M');
 
-    return { totalXp, currentLevel, tempXp, xpNeededForNext, levelProgressPercent, patentData };
-  }, [completedRaces, profile?.gender, progressPercent]);
+    // Exportamos o earnedBonus para o UI mostrar pro atleta!
+    return { totalXp, currentLevel, tempXp, xpNeededForNext, levelProgressPercent, patentData, earnedBonus };
+  }, [completedRaces, profile?.gender, progressPercent, currentGoal]);
 
   const { chartPoints, maxKm } = useMemo(() => {
     const points: ChartPoint[] = [];
@@ -451,35 +469,53 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {/* BLOCO DE PATENTE E INSÍGNIAS (NA MESMA LINHA) */}
-            <div className="flex items-center justify-center mt-3">
-              {/* Nome da Patente */}
-              <span className="text-race-volt font-bold text-[11px] tracking-widest uppercase mr-2">
-                {xpSystem.patentData.name}
-              </span>
+            {/* BLOCO DE PATENTE E INSÍGNIAS (CENTRALIZADO COM AÇÃO DE ZOOM) */}
+            <div className="flex flex-col items-center justify-center mt-3 w-full">
+              {/* O ml-6 empurra todo esse bloco para a direita */}
+              <div className="flex items-center justify-center ml-6">
+                {/* Nome da Patente */}
+                <span className="text-race-volt font-bold text-[11px] tracking-widest uppercase mr-2 text-center">
+                  {xpSystem.patentData.name}
+                </span>
 
-              {/* Box de Insígnias */}
-              <div className="flex items-center gap-1.5">
-                {/* Insígnia de Nível */}
-                <div className="relative group cursor-help hover:scale-110 transition-transform" title={`Patente Atual: ${xpSystem.patentData.name}`}>
-                  <Image src={xpSystem.patentData.insignia} alt="Nível Insignia" width={28} height={28} className="relative shrink-0" />
-                </div>
-
-                {/* Insígnias Especiais com separador vertical */}
-                {(profile?.is_owner || profile?.is_pioneer) && (
-                  <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 ml-1">
-                    {profile?.is_owner && (
-                      <div className="relative group cursor-help hover:scale-110 transition-transform" title="CEO & Desenvolvedor">
-                        <Image src="/insignias/insignia_ceo_dev.png" alt="Jones CEO/Dev" width={28} height={28} className="relative shrink-0" />
-                      </div>
-                    )}
-                    {profile?.is_pioneer && (
-                      <div className="relative group cursor-help hover:scale-110 transition-transform" title="Atleta Pioneiro">
-                        <Image src={profile.gender === 'F' ? '/insignias/insignia_pioneira.png' : '/insignias/insignia_pioneiro.png'} alt="Pioneiro" width={28} height={28} className="relative shrink-0" />
-                      </div>
-                    )}
+                {/* Box de Insígnias */}
+                <div className="flex items-center gap-1.5 justify-center">
+                  {/* Insígnia de Nível */}
+                  <div 
+                    className="relative group cursor-pointer hover:scale-110 transition-transform" 
+                    title={`Patente Atual: ${xpSystem.patentData.name}`}
+                    onClick={() => setSelectedInsignia({ src: xpSystem.patentData.insignia, title: `Patente Atual: ${xpSystem.patentData.name}` })}
+                  >
+                    <Image src={xpSystem.patentData.insignia} alt="Nível Insignia" width={28} height={28} className="relative shrink-0" />
                   </div>
-                )}
+
+                  {/* Insígnias Especiais com separador vertical */}
+                  {(profile?.is_owner || profile?.is_pioneer) && (
+                    <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 ml-1">
+                      {profile?.is_owner && (
+                        <div 
+                          className="relative group cursor-pointer hover:scale-110 transition-transform" 
+                          title="CEO & Desenvolvedor"
+                          onClick={() => setSelectedInsignia({ src: "/insignias/insignia_ceo_dev.png", title: "CEO & Desenvolvedor" })}
+                        >
+                          <Image src="/insignias/insignia_ceo_dev.png" alt="Jones CEO/Dev" width={28} height={28} className="relative shrink-0" />
+                        </div>
+                      )}
+                      {profile?.is_pioneer && (
+                        <div 
+                          className="relative group cursor-pointer hover:scale-110 transition-transform" 
+                          title="Atleta Pioneiro"
+                          onClick={() => setSelectedInsignia({ 
+                            src: profile.gender === 'F' ? '/insignias/insignia_pioneira.png' : '/insignias/insignia_pioneiro.png', 
+                            title: "Atleta Pioneiro" 
+                          })}
+                        >
+                          <Image src={profile.gender === 'F' ? '/insignias/insignia_pioneira.png' : '/insignias/insignia_pioneiro.png'} alt="Pioneiro" width={28} height={28} className="relative shrink-0" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -545,7 +581,7 @@ export default function ProfilePage() {
               </div>
               
               <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mt-3 text-right">
-                {progressPercent >= 100 ? <span className="text-race-volt">Meta Atingida! 🔥 (+5000 XP)</span> : `${Math.round(progressPercent)}% Concluído`}
+                {progressPercent >= 100 ? <span className="text-race-volt">Meta Atingida! 🔥 (+{xpSystem.earnedBonus} XP)</span> : `${Math.round(progressPercent)}% Concluído`}
               </p>
             </div>
           </div>
@@ -672,6 +708,43 @@ export default function ProfilePage() {
             </button>
           </div>
           
+        </div>
+      )}
+
+      {/* MODAL DE ZOOM DA INSÍGNIA */}
+      {selectedInsignia && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          onClick={() => setSelectedInsignia(null)}
+        >
+          <div 
+            className="flex flex-col items-center gap-4 bg-race-card border border-white/10 p-8 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] relative max-w-sm w-full" 
+            onClick={e => e.stopPropagation()}
+          >
+            <button 
+              onClick={() => setSelectedInsignia(null)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-white bg-white/5 p-1.5 rounded-full transition-colors"
+            >
+              <X size={20} />
+            </button>
+            
+            <h3 className="text-race-volt font-black uppercase tracking-widest text-sm text-center mt-2">
+              {selectedInsignia.title}
+            </h3>
+            
+            <div className="relative w-48 h-48 my-4 drop-shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+              <Image 
+                src={selectedInsignia.src} 
+                alt={selectedInsignia.title} 
+                fill 
+                className="object-contain drop-shadow-2xl" 
+              />
+            </div>
+            
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+              Insígnia Oficial
+            </p>
+          </div>
         </div>
       )}
     </main>
