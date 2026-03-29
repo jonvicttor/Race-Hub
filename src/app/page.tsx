@@ -8,6 +8,7 @@ import { AddRaceModal } from './components/AddRaceModal';
 import { EditRaceModal } from './components/EditRaceModal';
 import { AddFriendModal } from './components/AddFriendModal'; 
 import { ChallengeModal } from './components/ChallengeModal'; 
+import { Leaderboard } from './components/Leaderboard'; // IMPORTAÇÃO DO NOVO COMPONENTE
 
 interface Race {
   id: string;
@@ -41,24 +42,14 @@ interface Challenge {
 
 const formatPrice = (priceStr?: string | number | null) => {
   if (priceStr === null || priceStr === undefined || priceStr === '') return '';
-  
   const str = String(priceStr);
   const hasNumbers = /\d/.test(str);
   if (!hasNumbers) return str;
-
   let cleanStr = str.replace(/[^\d.,]/g, '');
-  
-  if (cleanStr.includes(',')) {
-    cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
-  }
-
+  if (cleanStr.includes(',')) cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
   const num = parseFloat(cleanStr);
   if (isNaN(num)) return str;
-
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL'
-  }).format(num);
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
 export default function Home() {
@@ -165,7 +156,6 @@ export default function Home() {
     }
 
     initializeHome();
-
     return () => { isMounted = false; };
   }, [router]);
 
@@ -177,13 +167,7 @@ export default function Home() {
   const handleAcceptFriend = async (friendId: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    
-    await supabase
-      .from('friendships')
-      .update({ status: 'aceito' })
-      .eq('sender_id', friendId)
-      .eq('receiver_id', user.id);
-      
+    await supabase.from('friendships').update({ status: 'aceito' }).eq('sender_id', friendId).eq('receiver_id', user.id);
     refreshData();
   };
 
@@ -220,33 +204,25 @@ export default function Home() {
 
   useEffect(() => {
     if (!upcomingRace) return;
-
     const targetDate = new Date(`${upcomingRace.date}T00:00:00`);
-
     const updateTimer = () => {
       const now = new Date();
       const difference = targetDate.getTime() - now.getTime();
-
       if (difference <= 0) {
         setCountdown('É HOJE! Pra cima! 🏃‍♂️💨');
         return;
       }
-
       const days = Math.floor(difference / (1000 * 60 * 60 * 24));
       const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
       const minutes = Math.floor((difference / 1000 / 60) % 60);
       const seconds = Math.floor((difference / 1000) % 60);
-
       const h = String(hours).padStart(2, '0');
       const m = String(minutes).padStart(2, '0');
       const s = String(seconds).padStart(2, '0');
-
       setCountdown(`${days}d ${h}h ${m}m ${s}s`);
     };
-
     updateTimer(); 
     const intervalId = setInterval(updateTimer, 1000); 
-
     return () => clearInterval(intervalId); 
   }, [upcomingRace]);
 
@@ -262,21 +238,11 @@ export default function Home() {
             Race <span className="text-race-volt">Hub</span>
           </h1>
         </div>
-        
         <div className="flex items-center gap-3">
-          <button 
-            onClick={handleLogout}
-            className="p-2 text-gray-500 hover:text-red-500 transition-colors"
-            title="Sair do App"
-          >
+          <button onClick={handleLogout} className="p-2 text-gray-500 hover:text-red-500 transition-colors" title="Sair do App">
             <LogOut size={20} />
           </button>
-          
-          <button 
-            onClick={() => router.push('/profile')}
-            className="w-10 h-10 rounded-full border-2 border-race-volt p-0.5 hover:scale-105 active:scale-95 transition-transform"
-            title="Ver Meu Perfil"
-          >
+          <button onClick={() => router.push('/profile')} className="w-10 h-10 rounded-full border-2 border-race-volt p-0.5 hover:scale-105 active:scale-95 transition-transform" title="Ver Meu Perfil">
             <div className="w-full h-full bg-race-gray rounded-full flex items-center justify-center text-[10px] text-foreground font-bold uppercase">
               {userProfile?.username?.substring(0, 2) || '??'}
             </div>
@@ -292,17 +258,13 @@ export default function Home() {
               <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-black uppercase italic">
                 {upcomingRace.status === 'Inscrito' ? 'Pelotão Confirmado' : 'Próxima Prova'}
               </span>
-              
               {countdown && (
                 <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest flex items-center gap-1.5">
-                  <Timer size={10} strokeWidth={3} />
-                  {countdown}
+                  <Timer size={10} strokeWidth={3} /> {countdown}
                 </span>
               )}
             </div>
-
             <h2 className="text-3xl font-black uppercase italic mt-2 leading-none">{upcomingRace.name}</h2>
-            
             <div className="flex gap-4 mt-4">
               <div className="flex items-center gap-1 font-bold text-sm leading-none">
                 <Calendar size={16} /> {upcomingRace.date.split('-')[2]}/{upcomingRace.date.split('-')[1]}
@@ -311,7 +273,6 @@ export default function Home() {
                 <Trophy size={16} /> {upcomingRace.distance.toUpperCase()}
               </div>
             </div>
-            
             <div className="mt-4 flex flex-wrap gap-2">
               {upcomingRace.event_location && (
                 <div className="inline-flex items-start gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold max-w-full">
@@ -325,15 +286,9 @@ export default function Home() {
                 </div>
               )}
             </div>
-
             {upcomingRace.registration_link && upcomingRace.status === 'A Planejar' && (
               <div className="block mt-5">
-                <a 
-                  href={upcomingRace.registration_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-transform"
-                >
+                <a href={upcomingRace.registration_link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-transform">
                   <Link2 size={14} /> Inscrever-se
                 </a>
               </div>
@@ -365,16 +320,10 @@ export default function Home() {
                 <p className="text-xs text-gray-400 font-medium mt-1">Distância: <span className="text-white">{c.race.distance}</span></p>
                 
                 <div className="flex gap-2 mt-4">
-                  <button 
-                    onClick={() => handleAcceptChallenge(c)} 
-                    className="flex-1 bg-race-volt text-black text-xs font-black uppercase tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 hover:scale-105 transition-transform"
-                  >
+                  <button onClick={() => handleAcceptChallenge(c)} className="flex-1 bg-race-volt text-black text-xs font-black uppercase tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 hover:scale-105 transition-transform">
                     <Check size={14} strokeWidth={3} /> Aceitar
                   </button>
-                  <button 
-                    onClick={() => handleDeclineChallenge(c.id)} 
-                    className="px-4 bg-red-500/10 text-red-500 border border-red-500/20 text-xs font-black uppercase tracking-widest rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
-                  >
+                  <button onClick={() => handleDeclineChallenge(c.id)} className="px-4 bg-red-500/10 text-red-500 border border-red-500/20 text-xs font-black uppercase tracking-widest rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors">
                     Arregar
                   </button>
                 </div>
@@ -396,17 +345,16 @@ export default function Home() {
                 </div>
                 <span className="text-xs font-bold text-white uppercase">{p.username} enviou um convite!</span>
               </div>
-              <button 
-                onClick={() => handleAcceptFriend(p.id)}
-                className="bg-race-volt text-black p-2 rounded-lg hover:scale-105 transition-transform"
-                title="Aceitar no Pelotão"
-              >
+              <button onClick={() => handleAcceptFriend(p.id)} className="bg-race-volt text-black p-2 rounded-lg hover:scale-105 transition-transform" title="Aceitar no Pelotão">
                 <Check size={16} strokeWidth={3} />
               </button>
             </div>
           ))}
         </div>
       )}
+
+      {/* INSERÇÃO DO LEADERBOARD AQUI 👇 */}
+      <Leaderboard />
 
       {/* Amigos (Pelotão) */}
       <div className="flex justify-between items-center mb-4">
@@ -417,11 +365,7 @@ export default function Home() {
       <div className="flex gap-4 mb-10 overflow-x-auto pb-2 scrollbar-hide">
         {profiles.length > 0 ? (
           profiles.map((p) => (
-            <button 
-              key={p.id} 
-              onClick={() => router.push(`/profile/${p.id}`)}
-              className="flex flex-col items-center gap-2 min-w-14 hover:scale-105 transition-transform group"
-            >
+            <button key={p.id} onClick={() => router.push(`/profile/${p.id}`)} className="flex flex-col items-center gap-2 min-w-14 hover:scale-105 transition-transform group">
               <div className="w-14 h-14 rounded-2xl bg-race-card border border-white/10 group-hover:border-race-volt/50 flex items-center justify-center font-bold text-race-volt text-xl uppercase shadow-sm transition-colors">
                 {p.username?.[0] || '?'}
               </div>
@@ -459,20 +403,12 @@ export default function Home() {
               <div className="flex flex-col items-end gap-2 shrink-0">
                 <span className="text-race-volt font-black italic whitespace-nowrap">{race.distance.toUpperCase()}</span>
                 <div className="flex gap-2 mt-1">
-                  {/* BOTÃO DE DESAFIAR */}
                   {profiles.length > 0 && (
-                    <button 
-                      onClick={() => setChallengingRace(race)}
-                      className="p-1.5 bg-race-volt/10 text-race-volt rounded-lg hover:bg-race-volt hover:text-black transition-all"
-                      title="Desafiar Pelotão"
-                    >
+                    <button onClick={() => setChallengingRace(race)} className="p-1.5 bg-race-volt/10 text-race-volt rounded-lg hover:bg-race-volt hover:text-black transition-all" title="Desafiar Pelotão">
                       <Flame size={14} />
                     </button>
                   )}
-                  <button 
-                    onClick={() => setEditingRace(race)}
-                    className="p-1.5 bg-white/5 rounded-lg hover:bg-white/20 transition-all"
-                  >
+                  <button onClick={() => setEditingRace(race)} className="p-1.5 bg-white/5 rounded-lg hover:bg-white/20 transition-all">
                     <Edit3 size={14} />
                   </button>
                 </div>
@@ -481,46 +417,19 @@ export default function Home() {
 
             <div className="flex flex-col gap-3 mt-2">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-400">
-                <span className="flex items-center gap-1">
-                  <Calendar size={12} /> {race.date.split('-')[2]}/{race.date.split('-')[1]}
-                </span>
-                
-                {race.event_location && (
-                  <span className="flex items-center gap-1 text-white">
-                    <Map size={12} className="text-race-volt" /> {race.event_location}
-                  </span>
-                )}
-
-                {race.price && (
-                  <span className="flex items-center gap-1 text-green-400 font-medium">
-                    {formatPrice(race.price)}
-                  </span>
-                )}
+                <span className="flex items-center gap-1"><Calendar size={12} /> {race.date.split('-')[2]}/{race.date.split('-')[1]}</span>
+                {race.event_location && <span className="flex items-center gap-1 text-white"><Map size={12} className="text-race-volt" /> {race.event_location}</span>}
+                {race.price && <span className="flex items-center gap-1 text-green-400 font-medium">{formatPrice(race.price)}</span>}
               </div>
-
               {(race.kit_location || race.kit_datetime) && (
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-500 bg-white/5 p-2 rounded-lg border border-white/5">
                   <span className="font-bold uppercase text-[9px] tracking-widest text-gray-400">KIT:</span>
-                  {race.kit_location && (
-                    <span className="flex items-center gap-1">
-                      <MapPin size={10} /> {race.kit_location}
-                    </span>
-                  )}
-                  {race.kit_datetime && (
-                    <span className="flex items-center gap-1">
-                      <Clock size={10} /> {race.kit_datetime}
-                    </span>
-                  )}
+                  {race.kit_location && <span className="flex items-center gap-1"><MapPin size={10} /> {race.kit_location}</span>}
+                  {race.kit_datetime && <span className="flex items-center gap-1"><Clock size={10} /> {race.kit_datetime}</span>}
                 </div>
               )}
-
               {race.registration_link && race.status === 'A Planejar' && (
-                <a 
-                  href={race.registration_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-flex items-center justify-center gap-2 bg-race-volt/10 text-race-volt border border-race-volt/20 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-race-volt hover:text-black transition-colors"
-                >
+                <a href={race.registration_link} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center justify-center gap-2 bg-race-volt/10 text-race-volt border border-race-volt/20 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-race-volt hover:text-black transition-colors">
                   <Link2 size={12} /> Link de Inscrição
                 </a>
               )}
@@ -530,20 +439,11 @@ export default function Home() {
       </div>
 
       {editingRace && (
-        <EditRaceModal 
-          race={editingRace} 
-          onClose={() => setEditingRace(null)} 
-          onUpdate={refreshData}
-        />
+        <EditRaceModal race={editingRace} onClose={() => setEditingRace(null)} onUpdate={refreshData} />
       )}
 
-      {/* RENDERIZA O MODAL DE DESAFIO QUANDO SELECIONADO */}
       {challengingRace && (
-        <ChallengeModal 
-          race={challengingRace} 
-          friends={profiles} 
-          onClose={() => { setChallengingRace(null); refreshData(); }} 
-        />
+        <ChallengeModal race={challengingRace} friends={profiles} onClose={() => { setChallengingRace(null); refreshData(); }} />
       )}
     </main>
   );
