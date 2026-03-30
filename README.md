@@ -1,17 +1,18 @@
 # 🏃‍♂️ RACE HUB | RPG de Corrida
 
-> Transforme seus quilômetros em experiência e suas corridas em uma jornada épica.
-
-O **Race Hub** é uma plataforma desenvolvida para corredores que buscam gamificar seus treinos e provas oficiais. Com um sistema de progressão inspirado em RPGs, o app calcula seu XP com base na performance, define patentes exclusivas e permite desafios entre membros do pelotão.
+> **⚠️ AVISO LEGAL: PROJETO PROPRIETÁRIO** > Este software e seu código-fonte são de propriedade exclusiva de João Victor Alves. O acesso através deste repositório é concedido apenas para fins de **visualização de portfólio e estudo individual**.  
+> **O uso comercial, a redistribuição ou a cópia total/parcial para outros fins são estritamente proibidos sem autorização prévia por escrito.**
 
 ---
 
+O **Race Hub** é uma plataforma desenvolvida para corredores que buscam gamificar seus treinos e provas oficiais. Com um sistema de progressão inspirado em RPGs, o app calcula seu XP com base na performance, define patentes exclusivas e permite desafios entre membros do pelotão.
+
 ## ✨ Funcionalidades Principais
 
-- 📊 **Dashboard de Performance:** Acompanhe seu volume mensal e progresso de metas.
-- 🛡️ **Sistema de Patentes:** De "Iniciante do Asfalto" a "Lenda do Pelotão".
-- 🏅 **Insígnias Exclusivas:** Medalhas dinâmicas para Pioneiros e Desenvolvedores.
-- 🔥 **Desafios de Pelotão:** Sistema social para desafiar amigos.
+- 🛡️ **Sistema de Patentes Hardcore:** De "Iniciante do Asfalto" a "Lenda do Pelotão".
+- 🏅 **Insígnias Dinâmicas:** Galeria de medalhas com sistema de visualização (zoom).
+- 🔥 **Desafios de Pelotão:** Sistema social para desafiar amigos para provas.
+- 🏆 **Leaderboard Realtime:** Ranking dinâmico entre amigos baseado em XP.
 
 ## 🛠️ Tech Stack
 
@@ -19,8 +20,8 @@ O **Race Hub** é uma plataforma desenvolvida para corredores que buscam gamific
 - **Banco de Dados & Auth:** Supabase
 - **Estilização:** Tailwind CSS
 
-## 🚀 Como Rodar o Projeto
+---
+## 📄 Licença e Propriedade
+Este projeto é **Proprietário**. Para propostas comerciais ou parcerias, entre em contato através do meu perfil.
 
-### 1. Clone o repositório
-```bash
-git clone https://github.com/jonvicttor/Race-Hub.git
+Desenvolvido com ⚡ por [João Victor (Jones)](https://github.com/jonvicttor)
