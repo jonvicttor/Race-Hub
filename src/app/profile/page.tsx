@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, FileText, BarChart3, Activity, Target, ChevronRight } from 'lucide-react';
+import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, FileText, BarChart3, Activity, Target, ChevronRight, Trophy, Map, Timer, Link2, Calendar } from 'lucide-react';
 import { AddRaceModal } from '../components/AddRaceModal'; 
 import Image from 'next/image';
 
@@ -17,6 +17,9 @@ interface Race {
   status: string;
   certificate_url?: string; 
   activity_type?: string; 
+  event_location?: string;
+  price?: string | number | null;
+  registration_link?: string;
 }
 
 interface Profile {
@@ -37,7 +40,6 @@ interface ChartPoint {
   treinoKm: number;
 }
 
-// DEFINIÇÃO DAS PATENTES E INSÍGNIAS (Por Nível e Gênero)
 const getPatentData = (level: number, gender: 'M' | 'F') => {
   if (level >= 60) return { 
     name: 'Lenda do Pelotão', 
@@ -61,6 +63,25 @@ const getPatentData = (level: number, gender: 'M' | 'F') => {
   };
 };
 
+const formatDistance = (dist?: string) => {
+  if (!dist) return '';
+  const numeric = parseFloat(dist.replace(/[^\d.,]/g, '').replace(',', '.'));
+  if (isNaN(numeric)) return dist.toUpperCase();
+  return `${numeric.toFixed(2)} KM`;
+};
+
+const formatPrice = (priceStr?: string | number | null) => {
+  if (priceStr === null || priceStr === undefined || priceStr === '') return '';
+  const str = String(priceStr);
+  const hasNumbers = /\d/.test(str);
+  if (!hasNumbers) return str;
+  let cleanStr = str.replace(/[^\d.,]/g, '');
+  if (cleanStr.includes(',')) cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
+  const num = parseFloat(cleanStr);
+  if (isNaN(num)) return str;
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+};
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [completedRaces, setCompletedRaces] = useState<Race[]>([]);
@@ -74,8 +95,8 @@ export default function ProfilePage() {
   const [newGoal, setNewGoal] = useState('');
 
   const [viewMode, setViewMode] = useState<'perfil' | 'provas' | 'treinos'>('perfil');
+  const [countdown, setCountdown] = useState<string>('');
   
-  // NOVO ESTADO: Controla a insígnia que está em zoom
   const [selectedInsignia, setSelectedInsignia] = useState<{ src: string, title: string } | null>(null);
 
   const router = useRouter();
@@ -90,7 +111,7 @@ export default function ProfilePage() {
       }
 
       const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      const { data: r } = await supabase.from('races').select('*').eq('user_id', user.id).eq('status', 'Concluído').order('date', { ascending: false });
+      const { data: r } = await supabase.from('races').select('*').eq('user_id', user.id).order('date', { ascending: false });
 
       if (isMounted) {
         if (p) {
@@ -162,17 +183,19 @@ export default function ProfilePage() {
     }
   };
 
-  const totalKm = completedRaces.reduce((acc, race) => {
+  const finishedRaces = completedRaces.filter(r => r.status === 'Concluído');
+  
+  const totalKm = parseFloat(finishedRaces.reduce((acc, race) => {
     const km = parseFloat(race.distance.replace(/[^\d.]/g, '')) || 0;
     return acc + km;
-  }, 0);
+  }, 0).toFixed(2));
 
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
   const currentMonthName = new Date().toLocaleString('pt-BR', { month: 'long' });
 
   const currentMonthKm = useMemo(() => {
-    return completedRaces.reduce((acc, race) => {
+    const sum = finishedRaces.reduce((acc, race) => {
       if (!race.date) return acc;
       const [y, m] = race.date.split('-');
       if (parseInt(y) === currentYear && parseInt(m) - 1 === currentMonth) {
@@ -180,18 +203,17 @@ export default function ProfilePage() {
       }
       return acc;
     }, 0);
-  }, [completedRaces, currentMonth, currentYear]);
+    return parseFloat(sum.toFixed(2));
+  }, [finishedRaces, currentMonth, currentYear]);
 
   const currentGoal = profile?.monthly_goal || 50;
   const progressPercent = Math.min((currentMonthKm / currentGoal) * 100, 100);
 
-  // MÁGICA DO XP (O Motor do RPG Hardcore Inteligente)
   const xpSystem = useMemo(() => {
     const TREINO_XP_PER_KM = 100;
     const PROVA_XP_PER_KM = 200; 
     const RP_BONUS_XP = 1000;
 
-    // MATEMÁTICA NOVA: Bônus Escalonado pela Dificuldade da Meta
     let earnedBonus = 0;
     if (currentGoal <= 50) {
       earnedBonus = 1000;
@@ -208,7 +230,7 @@ export default function ProfilePage() {
     let totalXp = 0;
     const bestPacesByDistance: Record<string, number> = {};
 
-    completedRaces.forEach(race => {
+    finishedRaces.forEach(race => {
       const km = parseFloat(race.distance.replace(/[^\d.]/g, '')) || 0;
       const isProva = race.activity_type !== 'treino';
       let raceXp = km * (isProva ? PROVA_XP_PER_KM : TREINO_XP_PER_KM);
@@ -226,7 +248,6 @@ export default function ProfilePage() {
       totalXp += raceXp;
     });
 
-    // Se bateu 100% da meta, injeta a quantia dinâmica que calculamos lá em cima
     if (progressPercent >= 100) {
       totalXp += earnedBonus;
     }
@@ -249,9 +270,8 @@ export default function ProfilePage() {
     const levelProgressPercent = Math.min((tempXp / xpNeededForNext) * 100, 100);
     const patentData = getPatentData(currentLevel, profile?.gender || 'M');
 
-    // Exportamos o earnedBonus para o UI mostrar pro atleta!
     return { totalXp, currentLevel, tempXp, xpNeededForNext, levelProgressPercent, patentData, earnedBonus };
-  }, [completedRaces, profile?.gender, progressPercent, currentGoal]);
+  }, [finishedRaces, profile?.gender, progressPercent, currentGoal]);
 
   const { chartPoints, maxKm } = useMemo(() => {
     const points: ChartPoint[] = [];
@@ -271,7 +291,7 @@ export default function ProfilePage() {
 
     let highest = 0;
     
-    completedRaces.forEach(race => {
+    finishedRaces.forEach(race => {
       if (!race.date) return;
       const [y, m] = race.date.split('-');
       const raceYear = parseInt(y);
@@ -287,13 +307,18 @@ export default function ProfilePage() {
         } else {
           match.provaKm += km;
         }
-
-        if (match.totalKm > highest) highest = match.totalKm;
       }
     });
 
+    points.forEach(p => {
+      p.totalKm = parseFloat(p.totalKm.toFixed(2));
+      p.treinoKm = parseFloat(p.treinoKm.toFixed(2));
+      p.provaKm = parseFloat(p.provaKm.toFixed(2));
+      if (p.totalKm > highest) highest = p.totalKm;
+    });
+
     return { chartPoints: points, maxKm: highest };
-  }, [completedRaces]);
+  }, [finishedRaces]);
 
   const chartHeight = 160; 
   const chartWidth = 1000; 
@@ -327,8 +352,30 @@ export default function ProfilePage() {
     return { linePath: linePathD, areaPath: areaPathD, pointsCoords: coords };
   }, [chartPoints, maxKm, chartHeight, chartWidth]);
 
-  const listProvas = completedRaces.filter(r => r.activity_type !== 'treino');
-  const listTreinos = completedRaces.filter(r => r.activity_type === 'treino');
+  const today = new Date().toISOString().split('T')[0];
+  const upcomingRace = completedRaces.filter(r => r.status !== 'Concluído').find(race => race.date >= today);
+
+  useEffect(() => {
+    if (!upcomingRace) return;
+    const targetDate = new Date(`${upcomingRace.date}T00:00:00`);
+    const calculateCountdown = () => {
+      const now = new Date();
+      const difference = targetDate.getTime() - now.getTime();
+      if (difference <= 0) { setCountdown('É HOJE! Pra cima! 🏃‍♂️💨'); return; }
+      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((difference / 1000 / 60) % 60);
+      const seconds = Math.floor((difference / 1000) % 60);
+      const h = String(hours).padStart(2, '0'); const m = String(minutes).padStart(2, '0'); const s = String(seconds).padStart(2, '0');
+      setCountdown(`${days}d ${h}h ${m}m ${s}s`);
+    };
+    setTimeout(calculateCountdown, 0);
+    const intervalId = setInterval(calculateCountdown, 1000);
+    return () => clearInterval(intervalId); 
+  }, [upcomingRace]);
+
+  const listProvas = finishedRaces.filter(r => r.activity_type !== 'treino');
+  const listTreinos = finishedRaces.filter(r => r.activity_type === 'treino');
 
   const renderList = (items: Race[], title: string) => (
     <div className="animate-in slide-in-from-right-8 fade-in duration-300">
@@ -364,7 +411,7 @@ export default function ProfilePage() {
                     <h4 className="font-bold text-white uppercase leading-tight">{race.name}</h4>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <p className="text-xs text-gray-400">{race.distance.toUpperCase()}</p>
+                    <p className="text-xs text-gray-400">{formatDistance(race.distance)}</p>
                     <span className="text-[10px] text-gray-600 font-bold">•</span>
                     <p className="text-[10px] text-gray-500 uppercase tracking-widest">{race.date.split('-').reverse().join('/')}</p>
                   </div>
@@ -469,18 +516,13 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {/* BLOCO DE PATENTE E INSÍGNIAS (CENTRALIZADO COM AÇÃO DE ZOOM) */}
             <div className="flex flex-col items-center justify-center mt-3 w-full">
-              {/* O ml-6 empurra todo esse bloco para a direita */}
               <div className="flex items-center justify-center ml-6">
-                {/* Nome da Patente */}
                 <span className="text-race-volt font-bold text-[11px] tracking-widest uppercase mr-2 text-center">
                   {xpSystem.patentData.name}
                 </span>
 
-                {/* Box de Insígnias */}
                 <div className="flex items-center gap-1.5 justify-center">
-                  {/* Insígnia de Nível */}
                   <div 
                     className="relative group cursor-pointer hover:scale-110 transition-transform" 
                     title={`Patente Atual: ${xpSystem.patentData.name}`}
@@ -489,7 +531,6 @@ export default function ProfilePage() {
                     <Image src={xpSystem.patentData.insignia} alt="Nível Insignia" width={28} height={28} className="relative shrink-0" />
                   </div>
 
-                  {/* Insígnias Especiais com separador vertical */}
                   {(profile?.is_owner || profile?.is_pioneer) && (
                     <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 ml-1">
                       {profile?.is_owner && (
@@ -525,6 +566,55 @@ export default function ProfilePage() {
                 </div>
             </div>
           </div>
+
+          {upcomingRace && (
+            <div className="bg-race-volt p-6 rounded-4xl text-black mb-8 relative overflow-hidden shadow-lg shadow-race-volt/10 flex flex-col items-start">
+              <div className="relative z-10 w-full">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-black uppercase italic">
+                    {upcomingRace.status === 'Inscrito' ? 'Pelotão Confirmado' : 'Próxima Prova'}
+                  </span>
+                  {countdown && (
+                    <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest flex items-center gap-1.5">
+                      <Timer size={10} strokeWidth={3} /> {countdown}
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-3xl font-black uppercase italic mt-2 leading-none">{upcomingRace.name}</h2>
+                <div className="flex gap-4 mt-4">
+                  <div className="flex items-center gap-1 font-bold text-sm leading-none">
+                    <Calendar size={16} /> {upcomingRace.date.split('-')[2]}/{upcomingRace.date.split('-')[1]}
+                  </div>
+                  <div className="flex items-center gap-1 font-bold text-sm leading-none">
+                    <Trophy size={16} /> {formatDistance(upcomingRace.distance)}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {upcomingRace.event_location && (
+                    <div className="inline-flex items-start gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold max-w-full">
+                      <Map size={14} className="shrink-0 mt-0.5" /> 
+                      <span className="leading-snug wrap-break-word">{upcomingRace.event_location}</span>
+                    </div>
+                  )}
+                  {upcomingRace.price && (
+                    <div className="inline-flex items-center gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold text-black max-w-full">
+                      {formatPrice(upcomingRace.price)}
+                    </div>
+                  )}
+                </div>
+                {upcomingRace.registration_link && upcomingRace.status === 'A Planejar' && (
+                  <div className="block mt-5">
+                    <a href={upcomingRace.registration_link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-transform">
+                      <Link2 size={14} /> Inscrever-se
+                    </a>
+                  </div>
+                )}
+              </div>
+              <div className="absolute -right-4 -bottom-4 opacity-10">
+                <Trophy size={150} strokeWidth={3} />
+              </div>
+            </div>
+          )}
 
           <div className="bg-race-card border border-white/5 rounded-3xl p-5 mb-4 relative overflow-hidden">
             <div className="absolute right-0 top-0 w-32 h-32 bg-race-volt/5 blur-3xl rounded-full"></div>
@@ -589,8 +679,8 @@ export default function ProfilePage() {
           <div className="grid grid-cols-2 gap-4 mb-10">
             <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
               <TrendingUp className="text-race-volt" size={24} />
-              <span className="text-3xl font-black italic">{completedRaces.length}</span>
-              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Registros</span>
+              <span className="text-3xl font-black italic">{finishedRaces.length}</span>
+              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Concluídas</span>
             </div>
             <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
               <Route className="text-race-volt" size={24} />
@@ -634,17 +724,27 @@ export default function ProfilePage() {
                   <path d={linePath} fill="none" stroke="#d1ff00" strokeWidth="3" vectorEffect="non-scaling-stroke" filter="url(#glow)" className="transition-all duration-500 ease-out" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 
-                {pointsCoords.map((coord, index) => (
-                  <div key={index} className="absolute flex flex-col items-center z-10" style={{ left: `${coord.percentX}%`, top: `${coord.y}px`, transform: 'translate(-50%, -50%)' }}>
-                    {coord.totalKm > 0 && (
-                      <div className="absolute -top-7 flex items-baseline gap-0.5 pointer-events-none">
-                        <span className="text-sm font-black text-white">{coord.totalKm}</span>
-                        <span className="text-[9px] font-bold text-race-volt">KM</span>
-                      </div>
-                    )}
-                    <div className={`w-2.5 h-2.5 rounded-full border-2 border-background shadow-[0_0_8px_rgba(209,255,0,0.6)] ${coord.totalKm > 0 ? 'bg-race-volt' : 'bg-transparent border-white/20'}`}></div>
-                  </div>
-                ))}
+                {/* 👇 AQUI ESTÁ A CORREÇÃO DO POSICIONAMENTO DO TEXTO 👇 */}
+                {pointsCoords.map((coord, index) => {
+                  let textPositionClass = "-translate-x-1/2 left-1/2"; 
+                  if (index === pointsCoords.length - 1) {
+                    textPositionClass = "-translate-x-[85%] left-1/2"; 
+                  } else if (index === 0) {
+                    textPositionClass = "-translate-x-[15%] left-1/2"; 
+                  }
+
+                  return (
+                    <div key={index} className="absolute flex flex-col items-center z-10" style={{ left: `${coord.percentX}%`, top: `${coord.y}px`, transform: 'translate(-50%, -50%)' }}>
+                      {coord.totalKm > 0 && (
+                        <div className={`absolute -top-7 flex items-baseline gap-0.5 pointer-events-none whitespace-nowrap ${textPositionClass}`}>
+                          <span className="text-sm font-black text-white">{coord.totalKm.toFixed(2)}</span>
+                          <span className="text-[9px] font-bold text-race-volt">KM</span>
+                        </div>
+                      )}
+                      <div className={`w-2.5 h-2.5 rounded-full border-2 border-background shadow-[0_0_8px_rgba(209,255,0,0.6)] ${coord.totalKm > 0 ? 'bg-race-volt' : 'bg-transparent border-white/20'}`}></div>
+                    </div>
+                  );
+                })}
                 
                 <div className="flex justify-between w-full absolute -bottom-6 px-1">
                   {chartPoints.map((p, i) => (
@@ -697,12 +797,10 @@ export default function ProfilePage() {
               </div>
               <div className="text-left w-full relative z-10 leading-none">
                 <h4 className="text-2xl font-black italic text-white mb-1">{listTreinos.length}</h4>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Treinos Diários</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Treinos da Semana</p>
               </div>
               <div className="w-full flex items-center justify-between mt-2 pt-4 border-t border-white/5 relative z-10">
-                <span className="text-[9px] text-gray-400 uppercase tracking-widest">
-                  {listTreinos.length > 0 ? `Último: ${listTreinos[0].distance.toUpperCase()}` : 'Nenhum Treino'}
-                </span>
+                <span className="text-[9px] text-gray-400 uppercase tracking-widest">{listTreinos.length > 0 ? formatDistance(listTreinos[0].distance) : 'Nenhum'}</span>
                 <ChevronRight size={12} className="text-race-volt" />
               </div>
             </button>
@@ -733,7 +831,7 @@ export default function ProfilePage() {
             </h3>
             
             <div className="relative w-48 h-48 my-4 drop-shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-              <Image 
+              <Image  
                 src={selectedInsignia.src} 
                 alt={selectedInsignia.title} 
                 fill 

@@ -1,68 +1,62 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, ChangeEvent } from 'react';
 import { Plus, X, Link2, Timer, Zap, Calculator, FileBadge, Activity, Trophy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export function AddRaceModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // NOVO ESTADO: Define se é Prova ou Treino (o default é prova para manter o padrão)
   const [activityType, setActivityType] = useState<'prova' | 'treino'>('prova');
 
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [distance, setDistance] = useState(''); 
-  const [location, setLocation] = useState('');
   const [status, setStatus] = useState('A Planejar');
   const [registrationLink, setRegistrationLink] = useState(''); 
   const [eventLocation, setEventLocation] = useState(''); 
   const [price, setPrice] = useState(''); 
-  
   const [finishTime, setFinishTime] = useState('');
   const [pace, setPace] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDateChange = (e: ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, ''); 
-    
-    if (value.length > 2) {
-      value = value.substring(0, 2) + '/' + value.substring(2);
-    }
-    if (value.length > 5) {
-      value = value.substring(0, 5) + '/' + value.substring(5, 9);
-    }
-    
+    if (value.length > 2) value = value.substring(0, 2) + '/' + value.substring(2);
+    if (value.length > 5) value = value.substring(0, 5) + '/' + value.substring(5, 9);
     setDate(value);
   };
-
+  
+  const handleTimeChange = (e: ChangeEvent<HTMLInputElement>) => {
+    let v = e.target.value.replace(/\D/g, '');
+    if (v.length > 6) v = v.substring(0, 6);
+    if (v.length >= 5) v = `${v.substring(0, 2)}:${v.substring(2, 4)}:${v.substring(4)}`;
+    else if (v.length >= 3) v = `${v.substring(0, 2)}:${v.substring(2)}`;
+    setFinishTime(v);
+  };
+  
+  const handlePaceChange = (e: ChangeEvent<HTMLInputElement>) => {
+    let v = e.target.value.replace(/\D/g, '');
+    if (v.length > 4) v = v.substring(0, 4);
+    if (v.length >= 3) v = `${v.substring(0, 2)}:${v.substring(2)}`;
+    setPace(v);
+  };
+  
   const handleCalculatePace = () => {
     if (!finishTime || !distance) {
-      alert("Preencha o Tempo Final e a Distância primeiro (ex: 00:55:00 e 10KM)");
+      alert("Preencha o Tempo Final e a Distância primeiro (ex: 00:55:00 e 10)");
       return;
     }
-
-    const distMatch = distance.match(/[\d.]+/);
-    if (!distMatch) return;
-    const distKm = parseFloat(distMatch[0]);
-
+    const distKm = parseFloat(distance.replace(',', '.'));
+    if (isNaN(distKm) || distKm === 0) return;
     const parts = finishTime.split(':').map(Number);
     let totalMinutes = 0;
-
-    if (parts.length === 3) { 
-      totalMinutes = (parts[0] * 60) + parts[1] + (parts[2] / 60);
-    } else if (parts.length === 2) { 
-      totalMinutes = parts[0] + (parts[1] / 60);
-    } else {
-      alert("Use o formato HH:MM:SS ou MM:SS");
-      return;
-    }
-
+    if (parts.length === 3) totalMinutes = (parts[0] * 60) + parts[1] + (parts[2] / 60);
+    else if (parts.length === 2) totalMinutes = parts[0] + (parts[1] / 60);
+    else return;
     const paceDecimal = totalMinutes / distKm;
     const paceMinutes = Math.floor(paceDecimal);
     const paceSeconds = Math.round((paceDecimal - paceMinutes) * 60);
-
     setPace(`${String(paceMinutes).padStart(2, '0')}:${String(paceSeconds).padStart(2, '0')}`);
   };
 
@@ -72,243 +66,173 @@ export function AddRaceModal() {
 
     if (date.length !== 10) {
       alert('Por favor, preencha a data completa no formato DD/MM/AAAA.');
-      setLoading(false);
-      return;
+      setLoading(false); return;
     }
 
     const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      alert('Sessão expirada ou não autenticada. Faça login novamente.');
-      setLoading(false);
-      return;
-    }
+    if (!user) return;
 
     const [day, month, year] = date.split('/');
     const formattedDateForDB = `${year}-${month}-${day}`;
-
     const numericPrice = price.trim() === '' ? null : parseFloat(price.replace(',', '.'));
+    
     let certificateUrl = null;
 
     try {
-      // Se for TREINO, não precisa de certificado obrigatório
-      if (status === 'Concluído' && activityType === 'prova') {
-        if (!file) {
-          alert('Por favor, anexe o certificado (PNG, JPG ou PDF) para registrar uma prova concluída.');
-          setLoading(false);
-          return;
-        }
-
+      if (status === 'Concluído' && activityType === 'prova' && file) {
         const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('certificates')
-          .upload(fileName, file);
-
-        if (uploadError) throw new Error('Erro ao fazer upload do certificado.');
-
-        const { data: publicUrlData } = supabase.storage
-          .from('certificates')
-          .getPublicUrl(fileName);
-
-        certificateUrl = publicUrlData.publicUrl;
+        const fileName = `cert_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('certificates').upload(fileName, file);
+        if (uploadError) throw new Error('Erro no certificado.');
+        certificateUrl = supabase.storage.from('certificates').getPublicUrl(fileName).data.publicUrl;
       }
 
       const finalStatus = activityType === 'treino' ? 'Concluído' : status;
+      
+      const numericDist = parseFloat(distance.replace(',', '.'));
+      const finalDistance = isNaN(numericDist) ? distance : `${numericDist.toFixed(2)} KM`;
 
       const { error } = await supabase.from('races').insert([
         {
           user_id: user.id, 
-          name,
+          name, 
           date: formattedDateForDB, 
-          distance,
-          kit_location: location,
-          status: finalStatus,
+          distance: finalDistance,
+          status: finalStatus, 
           registration_link: registrationLink,
-          event_location: eventLocation,
+          event_location: eventLocation, 
           price: numericPrice,
           finish_time: finalStatus === 'Concluído' ? finishTime : null,
           pace: finalStatus === 'Concluído' ? pace : null,
           certificate_url: certificateUrl,
-          activity_type: activityType // SALVANDO A NOVA COLUNA AQUI
+          activity_type: activityType
         },
       ]);
 
       if (error) throw error;
-
+      resetStates();
       setIsOpen(false);
-      setName('');
-      setDate('');
-      setDistance('');
-      setLocation('');
-      setStatus('A Planejar');
-      setRegistrationLink('');
-      setEventLocation('');
-      setPrice('');
-      setFinishTime('');
-      setPace('');
-      setFile(null);
-      setActivityType('prova'); // reseta
-
-      alert(activityType === 'treino' ? 'Treino registrado com sucesso!' : 'Corrida adicionada com sucesso!');
       window.location.reload(); 
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro ao adicionar corrida.';
       console.error(error);
-      alert(errorMessage);
+      alert('Erro ao adicionar atividade.');
     } finally {
       setLoading(false);
     }
   };
 
+  const resetStates = () => {
+    setName(''); setDate(''); setDistance(''); setStatus('A Planejar');
+    setRegistrationLink(''); setEventLocation(''); setPrice('');
+    setFinishTime(''); setPace(''); setFile(null);
+  };
+
   return (
     <>
-      <button
-        onClick={() => setIsOpen(true)}
-        className="bg-race-volt text-black px-3 py-2 rounded-xl font-bold uppercase text-[10px] tracking-widest flex items-center gap-1 hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-race-volt/20"
-      >
+      <button onClick={() => setIsOpen(true)} className="bg-race-volt text-black px-3 py-2 rounded-xl font-bold uppercase text-[10px] tracking-widest flex items-center gap-1 hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-race-volt/20">
         <Plus size={14} strokeWidth={3} /> ADD
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-race-card w-full max-w-md rounded-3xl p-6 border border-white/10 shadow-2xl overflow-y-auto max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-10 sm:pt-24">
+          <div className="bg-race-card w-full max-w-md rounded-3xl p-6 border border-white/10 shadow-2xl overflow-y-auto max-h-[85vh]">
             
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black uppercase italic text-white flex items-center gap-2">
                 {activityType === 'treino' ? <Activity className="text-race-volt" /> : <Trophy className="text-race-volt" />}
-                {activityType === 'treino' ? 'Novo Treino' : (status === 'Concluído' ? 'Registrar Conquista' : 'Nova Corrida')}
+                Adicionar Atividade
               </h2>
-              <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white transition-colors">
-                <X size={24} />
-              </button>
-            </div>
-
-            {/* SELETOR DE TIPO: PROVA OU TREINO */}
-            <div className="flex bg-background border border-white/10 rounded-xl p-1 mb-6">
-              <button 
-                type="button"
-                onClick={() => setActivityType('prova')}
-                className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${activityType === 'prova' ? 'bg-race-volt text-black' : 'text-gray-500 hover:text-white'}`}
-              >
-                🏁 Prova Oficial
-              </button>
-              <button 
-                type="button"
-                onClick={() => { setActivityType('treino'); setStatus('Concluído'); }} // Treino sempre nasce concluído
-                className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${activityType === 'treino' ? 'bg-race-volt text-black' : 'text-gray-500 hover:text-white'}`}
-              >
-                👟 Treino Diário
-              </button>
+              <button onClick={() => { resetStates(); setIsOpen(false); }} className="text-gray-400 hover:text-white transition-colors"><X size={24} /></button>
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              
+              <div className="flex bg-background border border-white/10 rounded-xl p-1 mb-2">
+                <button type="button" onClick={() => setActivityType('prova')} className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${activityType === 'prova' ? 'bg-race-volt text-black' : 'text-gray-500 hover:text-white'}`}>
+                  🏁 Prova
+                </button>
+                <button type="button" onClick={() => { setActivityType('treino'); setStatus('Concluído'); }} className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${activityType === 'treino' ? 'bg-race-volt text-black' : 'text-gray-500 hover:text-white'}`}>
+                  👟 Treino
+                </button>
+              </div>
+
               <div>
                 <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">
                   {activityType === 'treino' ? 'Nome do Treino' : 'Nome da Prova'}
                 </label>
-                <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" placeholder={activityType === 'treino' ? "Ex: Rodagem Leve, Tiroteio, Longão..." : "Ex: Volta da Pampulha"} />
+                <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" placeholder={activityType === 'treino' ? "Ex: Rodagem Leve..." : "Ex: Volta da Pampulha"} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Data</label>
-                  <input 
-                    type="text" 
-                    required 
-                    maxLength={10}
-                    value={date} 
-                    onChange={handleDateChange} 
-                    className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors placeholder:text-gray-600" 
-                    placeholder="DD/MM/AAAA"
-                  />
+                  <input type="text" required maxLength={10} value={date} onChange={handleDateChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" placeholder="DD/MM/AAAA" />
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Distância</label>
-                  <input type="text" required value={distance} onChange={(e) => setDistance(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" placeholder="Ex: 5KM" />
+                  <div className="relative">
+                    <input type="text" required value={distance} onChange={(e) => setDistance(e.target.value.replace(/[^\d.,]/g, ''))} className="w-full bg-background border border-white/10 rounded-xl p-3 pr-10 text-white focus:border-race-volt outline-none transition-colors" placeholder="Ex: 10" />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">KM</span>
+                  </div>
                 </div>
               </div>
 
-              {/* STATUS SÓ APARECE PRA PROVA */}
-              {activityType === 'prova' && (
-                <div>
-                  <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Status</label>
-                  <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors">
-                    <option value="A Planejar">A Planejar</option>
-                    <option value="Inscrito">Inscrito</option>
-                    <option value="Concluído">Concluído</option>
-                  </select>
-                </div>
-              )}
-
-              {/* CAMPOS DE TEMPO E PACE APARECEM SE FOR TREINO OU PROVA CONCLUIDA */}
               {(status === 'Concluído' || activityType === 'treino') && (
-                <div className="flex flex-col gap-4 p-4 bg-race-volt/5 border border-race-volt/20 rounded-2xl animate-in fade-in slide-in-from-top-2">
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-4 p-4 bg-black/30 border border-white/5 rounded-2xl animate-in fade-in slide-in-from-top-2">
+                  <div className="grid grid-cols-2 gap-4 mt-2">
                     <div>
-                      <label className="text-[10px] font-bold uppercase text-race-volt mb-1 flex items-center gap-1">
+                      <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1">
                         <Timer size={12} /> Tempo Final
                       </label>
-                      <input type="text" required value={finishTime} onChange={(e) => setFinishTime(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors" placeholder="00:25:00" />
+                      <input type="text" required value={finishTime} onChange={handleTimeChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none" placeholder="00:25:00" />
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
-                        <label className="text-[10px] font-bold uppercase text-race-volt flex items-center gap-1">
-                          <Zap size={12} /> Pace
-                        </label>
-                        <button type="button" onClick={handleCalculatePace} className="text-[9px] bg-race-volt/20 text-race-volt px-2 py-0.5 rounded flex items-center gap-1 hover:bg-race-volt hover:text-black transition-colors">
-                          <Calculator size={10} /> Auto
-                        </button>
+                        <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Zap size={12} /> Pace</label>
+                        <button type="button" onClick={handleCalculatePace} className="text-[9px] bg-race-volt/20 text-race-volt px-2 py-0.5 rounded flex items-center gap-1 hover:bg-race-volt transition-colors"><Calculator size={10} /> Auto</button>
                       </div>
-                      <input type="text" required value={pace} onChange={(e) => setPace(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors" placeholder="05:00" />
+                      <input type="text" required value={pace} onChange={handlePaceChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none" placeholder="05:00" />
                     </div>
                   </div>
-                  
-                  {/* UPLOAD DE CERTIFICADO SÓ É EXIGIDO PRA PROVAS OFICIAIS */}
+
                   {activityType === 'prova' && (
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-race-volt mb-1 flex items-center gap-1">
-                        <FileBadge size={12} /> Upload do Certificado
+                    <div className="mt-2 border-t border-white/5 pt-4">
+                      <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1">
+                        <FileBadge size={12} /> Certificado (Opcional)
                       </label>
-                      <input 
-                        type="file" 
-                        accept=".png,.pdf,.jpg,.jpeg" 
-                        onChange={(e) => setFile(e.target.files?.[0] || null)} 
-                        className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-race-volt file:text-black hover:file:bg-race-volt/80 transition-all cursor-pointer"
-                      />
+                      <input type="file" accept=".png,.pdf,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-white hover:file:bg-white/20 transition-all cursor-pointer" />
                     </div>
                   )}
                 </div>
               )}
 
-              {/* CAMPOS DE INSCRIÇÃO/PREÇO/LOCAL SÓ PARA PROVAS FUTURAS */}
-              {status !== 'Concluído' && activityType === 'prova' && (
+              {activityType === 'prova' && (
                 <>
                   <div>
-                    <label className="text-xs font-bold uppercase text-gray-500 tracking-widest mb-1 flex items-center gap-1">
-                      <Link2 size={12} /> Link de Inscrição (Opcional)
-                    </label>
-                    <input type="url" value={registrationLink} onChange={(e) => setRegistrationLink(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors text-sm" placeholder="https://..." />
+                    <label className="text-xs font-bold uppercase text-gray-500 mb-1">Status</label>
+                    <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt transition-colors">
+                      <option value="A Planejar">A Planejar</option>
+                      <option value="Inscrito">Inscrito</option>
+                      <option value="Concluído">Concluído</option>
+                    </select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Local</label>
-                        <input type="text" value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none transition-colors" placeholder="Ex: Olinda - PE" />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Valor</label>
+                  {status !== 'Concluído' && (
+                    <div className="grid grid-cols-1 gap-4 p-4 bg-background border border-white/5 rounded-2xl animate-in fade-in slide-in-from-top-2">
+                        <div>
+                          <label className="text-xs font-bold uppercase text-gray-500 mb-1 flex items-center gap-1"><Link2 size={12} /> Link de Inscrição</label>
+                          <input type="url" value={registrationLink} onChange={(e) => setRegistrationLink(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" placeholder="https://..." />
+                        </div>
                         <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">R$</span>
-                          <input type="text" value={price} onChange={(e) => setPrice(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 pl-10 text-white outline-none transition-colors focus:border-race-volt" placeholder="0,00" />
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">R$</span>
+                            <input type="text" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.,]/g, ''))} className="w-full bg-background border border-white/10 rounded-xl p-3 pl-10 text-white outline-none focus:border-race-volt" placeholder="0,00" />
                         </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
 
               <button type="submit" disabled={loading} className="w-full bg-race-volt text-black font-black uppercase italic rounded-xl p-4 mt-2 hover:bg-opacity-90 disabled:opacity-50 transition-opacity">
-                {loading ? 'Processando...' : (activityType === 'treino' ? 'Registrar Treino' : (status === 'Concluído' ? 'Adicionar à Galeria' : 'Adicionar ao Calendário'))}
+                {loading ? 'Processando...' : 'Adicionar Atividade'}
               </button>
             </form>
           </div>
