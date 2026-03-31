@@ -352,8 +352,11 @@ export default function ProfilePage() {
     return { linePath: linePathD, areaPath: areaPathD, pointsCoords: coords };
   }, [chartPoints, maxKm, chartHeight, chartWidth]);
 
+  // 👇 CORREÇÃO: Pegar sempre a mais próxima, ignorando a ordem decrescente original do histórico 👇
   const today = new Date().toISOString().split('T')[0];
-  const upcomingRace = completedRaces.filter(r => r.status !== 'Concluído').find(race => race.date >= today);
+  const upcomingRace = completedRaces
+    .filter(r => r.status !== 'Concluído' && r.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
 
   useEffect(() => {
     if (!upcomingRace) return;
@@ -724,7 +727,6 @@ export default function ProfilePage() {
                   <path d={linePath} fill="none" stroke="#d1ff00" strokeWidth="3" vectorEffect="non-scaling-stroke" filter="url(#glow)" className="transition-all duration-500 ease-out" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 
-                {/* 👇 AQUI ESTÁ A CORREÇÃO DO POSICIONAMENTO DO TEXTO 👇 */}
                 {pointsCoords.map((coord, index) => {
                   let textPositionClass = "-translate-x-1/2 left-1/2"; 
                   if (index === pointsCoords.length - 1) {
@@ -831,7 +833,7 @@ export default function ProfilePage() {
             </h3>
             
             <div className="relative w-48 h-48 my-4 drop-shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-              <Image  
+              <Image 
                 src={selectedInsignia.src} 
                 alt={selectedInsignia.title} 
                 fill 
