@@ -24,7 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-br" className="h-full">
+    /* 👇 Adicionamos a classe 'dark' aqui para travar o tema escuro no Tailwind inteiro */
+    <html lang="pt-br" className="h-full dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground min-h-full`}
       >

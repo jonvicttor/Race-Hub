@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Flame } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { X, Zap, Target, Flame } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -21,87 +21,125 @@ interface ChallengeModalProps {
 }
 
 export function ChallengeModal({ race, friends, onClose }: ChallengeModalProps) {
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [selectedFriendId, setSelectedFriendId] = useState('');
+  const [duelType, setDuelType] = useState<'pace' | 'rp'>('pace');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleChallenge = async (friendId: string) => {
-    setLoadingId(friendId);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Não autenticado");
+  const handleSendChallenge = async () => {
+    if (!selectedFriendId) {
+      alert("Escolha um adversário para o duelo!");
+      return;
+    }
 
-      // 1. Verifica se já não existe um desafio para essa pessoa nessa corrida
+    setIsSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (user) {
+      // 1. Verifica se já existe um duelo pendente para não duplicar
       const { data: existing } = await supabase
-        .from('challenges')
+        .from('duels')
         .select('id')
         .eq('race_id', race.id)
-        .eq('challenged_id', friendId)
+        .eq('challenged_id', selectedFriendId)
+        .eq('status', 'pendente')
         .maybeSingle();
 
       if (existing) {
         alert('Você já desafiou esse atleta para esta prova!');
-        setLoadingId(null);
+        setIsSubmitting(false);
         return;
       }
 
-      // 2. Envia o desafio
-      const { error } = await supabase.from('challenges').insert([
-        {
-          challenger_id: user.id,
-          challenged_id: friendId,
-          race_id: race.id,
-          status: 'pendente'
-        }
-      ]);
+      // 2. Insere o novo duelo
+      const { error } = await supabase.from('duels').insert({
+        challenger_id: user.id,
+        challenged_id: selectedFriendId,
+        race_id: race.id,
+        duel_type: duelType,
+        status: 'pendente'
+      });
 
-      if (error) throw error;
-      
-      alert('Desafio enviado com sucesso! 🔥');
-      onClose();
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao enviar desafio.');
-    } finally {
-      setLoadingId(null);
+      if (error) {
+        console.error(error);
+        alert("Erro ao enviar desafio.");
+      } else {
+        alert("DESAFIO ENVIADO! Prepare as pernas. 🔥");
+        onClose();
+      }
     }
+    setIsSubmitting(false);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-race-card w-full max-w-sm rounded-3xl p-6 border border-white/10 shadow-2xl">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="text-xl font-black uppercase italic text-white flex items-center gap-2">
-              <Flame className="text-race-volt" size={24} /> Desafiar
-            </h2>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Para: {race.name}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={24} />
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+      <div className="bg-race-card border border-white/10 w-full max-w-md rounded-4xl p-8 relative overflow-hidden shadow-2xl">
+        {/* Efeito de Fundo */}
+        <div className="absolute -right-10 -top-10 opacity-10">
+          <Flame size={200} className="text-race-volt" />
         </div>
 
-        <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto scrollbar-hide">
-          {friends.length > 0 ? (
-            friends.map(friend => (
-              <div key={friend.id} className="bg-background border border-white/5 p-3 rounded-2xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-race-gray rounded-full flex items-center justify-center text-white font-black uppercase">
-                    {friend.username.substring(0, 2)}
-                  </div>
-                  <span className="font-bold text-white uppercase text-sm">{friend.username}</span>
-                </div>
+        <button onClick={onClose} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors">
+          <X size={24} />
+        </button>
+
+        <div className="relative z-10">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="bg-race-volt text-black text-[10px] font-black uppercase px-2 py-0.5 rounded italic">Modo Batalha</span>
+          </div>
+          <h2 className="text-3xl font-black uppercase italic text-white mb-6 leading-tight">
+            Intimar para <span className="text-race-volt">Duelo</span>
+          </h2>
+
+          <div className="space-y-6">
+            {/* Seleção de Adversário */}
+            <div>
+              <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-3 block">Convocação do Pelotão</label>
+              <select 
+                value={selectedFriendId}
+                onChange={(e) => setSelectedFriendId(e.target.value)}
+                className="w-full bg-background border border-white/10 rounded-2xl p-4 text-white font-bold outline-none focus:border-race-volt transition-colors appearance-none"
+              >
+                <option value="">Selecione o adversário...</option>
+                {friends.map(f => (
+                  <option key={f.id} value={f.id}>{f.username}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Seleção do Tipo de Duelo */}
+            <div>
+              <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-3 block">Regras da Disputa</label>
+              <div className="grid grid-cols-2 gap-3">
                 <button 
-                  onClick={() => handleChallenge(friend.id)}
-                  disabled={loadingId === friend.id}
-                  className="bg-race-volt/10 text-race-volt border border-race-volt/20 text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg hover:bg-race-volt hover:text-black transition-colors disabled:opacity-50"
+                  onClick={() => setDuelType('pace')}
+                  className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all ${duelType === 'pace' ? 'border-race-volt bg-race-volt/10 text-race-volt' : 'border-white/5 bg-white/5 text-gray-500'}`}
                 >
-                  {loadingId === friend.id ? '...' : 'Intimar'}
+                  <Zap size={20} />
+                  <span className="text-[10px] font-black uppercase italic">Velocidade</span>
+                </button>
+                <button 
+                  onClick={() => setDuelType('rp')}
+                  className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all ${duelType === 'rp' ? 'border-race-volt bg-race-volt/10 text-race-volt' : 'border-white/5 bg-white/5 text-gray-500'}`}
+                >
+                  <Target size={20} />
+                  <span className="text-[10px] font-black uppercase italic">Superação (RP)</span>
                 </button>
               </div>
-            ))
-          ) : (
-            <p className="text-gray-500 text-xs italic text-center py-4">Você ainda não tem amigos no Pelotão para desafiar.</p>
-          )}
+              <p className="text-[10px] text-gray-500 mt-3 text-center italic">
+                {duelType === 'pace' 
+                  ? "Vence quem cruzar a linha primeiro (Tempo Líquido)." 
+                  : "Vence quem baixar mais o próprio Recorde Pessoal."}
+              </p>
+            </div>
+
+            <button 
+              onClick={handleSendChallenge}
+              disabled={isSubmitting}
+              className="w-full bg-race-volt text-black py-5 rounded-2xl font-black uppercase italic tracking-tighter flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-race-volt/20 disabled:opacity-50"
+            >
+              {isSubmitting ? 'Enviando...' : 'Lançar Desafio'} <Flame size={20} strokeWidth={3} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

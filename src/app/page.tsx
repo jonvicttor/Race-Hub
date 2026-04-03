@@ -4,14 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic'; // 👇 O import dinâmico do Next.js
+import dynamic from 'next/dynamic';
 import { AddRaceModal } from './components/AddRaceModal';
 import { EditRaceModal } from './components/EditRaceModal';
 import { AddFriendModal } from './components/AddFriendModal'; 
 import { ChallengeModal } from './components/ChallengeModal'; 
 import { Leaderboard } from './components/Leaderboard'; 
 
-// 👇 Carregando o Mapa de forma inteligente (Lazy Loading) 👇
 const RouteMap = dynamic(() => import('./components/RouteMap'), { 
   ssr: false, 
   loading: () => <div className="w-full h-full bg-[#121212] animate-pulse rounded-xl flex items-center justify-center text-race-volt text-xs font-bold uppercase italic border border-white/5">Carregando Mapa...</div>
@@ -49,6 +48,7 @@ interface Challenge {
   challenged_id: string;
   race_id: string;
   status: string;
+  duel_type?: string;
   race: Race;
   challenger: Profile;
 }
@@ -117,11 +117,11 @@ export default function Home() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const [profilesRes, racesRes, friendshipsRes, challengesRes] = await Promise.all([
+    const [profilesRes, racesRes, friendshipsRes, duelsRes] = await Promise.all([
       supabase.from('profiles').select('*'),
       supabase.from('races').select('*').eq('user_id', user.id).neq('status', 'Concluído').order('date', { ascending: true }),
       supabase.from('friendships').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`),
-      supabase.from('challenges').select('*').eq('challenged_id', user.id).eq('status', 'pendente')
+      supabase.from('duels').select('*').eq('challenged_id', user.id).eq('status', 'pendente')
     ]);
 
     if (profilesRes.data) {
@@ -168,14 +168,14 @@ export default function Home() {
         }
       }
 
-      if (challengesRes.data && challengesRes.data.length > 0) {
-        const raceIds = challengesRes.data.map(c => c.race_id);
+      if (duelsRes.data && duelsRes.data.length > 0) {
+        const raceIds = duelsRes.data.map(c => c.race_id);
         const { data: cRaces } = await supabase.from('races').select('*').in('id', raceIds);
         
-        const enrichedChallenges = challengesRes.data.map(challenge => ({
-          ...challenge,
-          race: cRaces?.find(r => r.id === challenge.race_id),
-          challenger: profilesRes.data.find(p => p.id === challenge.challenger_id)
+        const enrichedChallenges = duelsRes.data.map(duel => ({
+          ...duel,
+          race: cRaces?.find(r => r.id === duel.race_id),
+          challenger: profilesRes.data.find(p => p.id === duel.challenger_id)
         })).filter(c => c.race && c.challenger) as Challenge[]; 
         
         setPendingChallenges(enrichedChallenges);
@@ -239,7 +239,9 @@ export default function Home() {
   const handleAcceptChallenge = async (challenge: Challenge) => { 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await supabase.from('challenges').update({ status: 'aceito' }).eq('id', challenge.id);
+    
+    await supabase.from('duels').update({ status: 'aceito' }).eq('id', challenge.id);
+    
     const newRace = {
       user_id: user.id,
       name: challenge.race.name,
@@ -257,7 +259,7 @@ export default function Home() {
   };
 
   const handleDeclineChallenge = async (challengeId: string) => {
-    await supabase.from('challenges').update({ status: 'recusado' }).eq('id', challengeId);
+    await supabase.from('duels').update({ status: 'recusado' }).eq('id', challengeId);
     refreshData();
   };
 
@@ -297,7 +299,6 @@ export default function Home() {
   const listProvas = races.filter(r => r.activity_type !== 'treino');
   const listTreinos = races.filter(r => r.activity_type === 'treino');
 
-  // 👇 Renderização da lista da Agenda (Calendário) com os mapas pequenos 👇
   const renderRaceList = (items: Race[], title: string) => (
     <div className="animate-in slide-in-from-right-8 fade-in duration-300">
       <div className="flex items-center gap-4 mb-6">
@@ -327,7 +328,6 @@ export default function Home() {
                   </p>
                 </div>
                 
-                {/* O MAPA PEQUENO DA AGENDA */}
                 {race.map_polyline && (
                   <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0 rounded overflow-hidden relative z-0 border border-white/10">
                     <RouteMap polyline={race.map_polyline} />
@@ -337,7 +337,7 @@ export default function Home() {
                 <div className={`flex flex-col items-end gap-2 shrink-0 ${!race.map_polyline ? 'ml-auto' : ''}`}>
                   <span className="text-race-volt font-black italic whitespace-nowrap">{formatDistance(race.distance)}</span>
                   <div className="flex gap-2 mt-1">
-                    {profiles.length > 0 && race.activity_type !== 'treino' && (
+                    {profiles.length > 0 && (
                       <button onClick={() => setChallengingRace(race)} className="p-1.5 bg-race-volt/10 text-race-volt rounded-lg hover:bg-race-volt hover:text-black transition-all" title="Desafiar Pelotão">
                         <Flame size={14} />
                       </button>
@@ -402,6 +402,62 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ===================== DESTAQUE GLOBAL (PRÓXIMA PROVA) ===================== */}
+      <div className="animate-in fade-in duration-300">
+        {upcomingRace ? (
+          <div className="bg-race-volt p-6 rounded-4xl text-black mb-8 relative overflow-hidden shadow-lg shadow-race-volt/10 flex flex-col items-start">
+            <div className="relative z-10 w-full">
+              <div className="flex items-center justify-between mb-2">
+                <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-black uppercase italic">
+                  {upcomingRace.status === 'Inscrito' ? 'Pelotão Confirmado' : 'Próxima Prova'}
+                </span>
+                {countdown && (
+                  <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest flex items-center gap-1.5">
+                    <Timer size={10} strokeWidth={3} /> {countdown}
+                  </span>
+                )}
+              </div>
+              <h2 className="text-3xl font-black uppercase italic mt-2 leading-none">{upcomingRace.name}</h2>
+              <div className="flex gap-4 mt-4">
+                <div className="flex items-center gap-1 font-bold text-sm leading-none">
+                  <Calendar size={16} /> {upcomingRace.date.split('-')[2]}/{upcomingRace.date.split('-')[1]}
+                </div>
+                <div className="flex items-center gap-1 font-bold text-sm leading-none">
+                  <Trophy size={16} /> {formatDistance(upcomingRace.distance)}
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {upcomingRace.event_location && (
+                  <div className="inline-flex items-start gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold max-w-full">
+                    <Map size={14} className="shrink-0 mt-0.5" /> 
+                    <span className="leading-snug wrap-break-word">{upcomingRace.event_location}</span>
+                  </div>
+                )}
+                {upcomingRace.price && (
+                  <div className="inline-flex items-center gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold text-black max-w-full">
+                    {formatPrice(upcomingRace.price)}
+                  </div>
+                )}
+              </div>
+              {upcomingRace.registration_link && upcomingRace.status === 'A Planejar' && (
+                <div className="block mt-5">
+                  <a href={upcomingRace.registration_link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-transform">
+                    <Link2 size={14} /> Inscrever-se
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="absolute -right-4 -bottom-4 opacity-10">
+              <Trophy size={150} strokeWidth={3} />
+            </div>
+          </div>
+        ) : (
+          <div className="bg-race-card p-6 rounded-4xl text-gray-500 mb-8 border border-white/5 italic text-sm text-center hidden">
+            {/* Oculto intencionalmente para não poluir quando não houver prova */}
+          </div>
+        )}
+      </div>
+
       {/* ABA DE NAVEGAÇÃO PRINCIPAL (FEED / CALENDÁRIO) */}
       <div className="flex bg-background border border-white/10 rounded-2xl p-1.5 mb-8">
         <button onClick={() => setMainTab('feed')} className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${mainTab === 'feed' ? 'bg-race-volt text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}>
@@ -415,6 +471,10 @@ export default function Home() {
       {/* ===================== ABA FEED ===================== */}
       {mainTab === 'feed' && (
         <div className="animate-in fade-in duration-300 flex flex-col gap-6">
+          
+          {/* Movi o Leaderboard para cá! */}
+          <Leaderboard />
+
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Feed do Pelotão</h3>
             <AddRaceModal />
@@ -459,7 +519,7 @@ export default function Home() {
                 {/* Título */}
                 <h3 className="text-lg font-black uppercase italic text-white">{activity.name}</h3>
 
-                {/* 👇 O MAPA ENTRA AQUI SE ELE EXISTIR (ESTILO POST) 👇 */}
+                {/* MAPA ESTILO POST */}
                 {activity.map_polyline && (
                   <div className="w-full h-48 sm:h-64 bg-black/40 rounded-xl border border-white/5 overflow-hidden relative z-0 mt-2 mb-2">
                     <RouteMap polyline={activity.map_polyline} />
@@ -551,60 +611,7 @@ export default function Home() {
 
           {calViewMode === 'menu' && (
             <div className="animate-in fade-in duration-300">
-              {/* Card Destaque */}
-              {upcomingRace ? (
-                <div className="bg-race-volt p-6 rounded-4xl text-black mb-8 relative overflow-hidden shadow-lg shadow-race-volt/10 flex flex-col items-start">
-                  <div className="relative z-10 w-full">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-black uppercase italic">
-                        {upcomingRace.status === 'Inscrito' ? 'Pelotão Confirmado' : 'Próxima Prova'}
-                      </span>
-                      {countdown && (
-                        <span className="bg-black text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest flex items-center gap-1.5">
-                          <Timer size={10} strokeWidth={3} /> {countdown}
-                        </span>
-                      )}
-                    </div>
-                    <h2 className="text-3xl font-black uppercase italic mt-2 leading-none">{upcomingRace.name}</h2>
-                    <div className="flex gap-4 mt-4">
-                      <div className="flex items-center gap-1 font-bold text-sm leading-none">
-                        <Calendar size={16} /> {upcomingRace.date.split('-')[2]}/{upcomingRace.date.split('-')[1]}
-                      </div>
-                      <div className="flex items-center gap-1 font-bold text-sm leading-none">
-                        <Trophy size={16} /> {formatDistance(upcomingRace.distance)}
-                      </div>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {upcomingRace.event_location && (
-                        <div className="inline-flex items-start gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold max-w-full">
-                          <Map size={14} className="shrink-0 mt-0.5" /> 
-                          <span className="leading-snug wrap-break-word">{upcomingRace.event_location}</span>
-                        </div>
-                      )}
-                      {upcomingRace.price && (
-                        <div className="inline-flex items-center gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold text-black max-w-full">
-                          {formatPrice(upcomingRace.price)}
-                        </div>
-                      )}
-                    </div>
-                    {upcomingRace.registration_link && upcomingRace.status === 'A Planejar' && (
-                      <div className="block mt-5">
-                        <a href={upcomingRace.registration_link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-transform">
-                          <Link2 size={14} /> Inscrever-se
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                  <div className="absolute -right-4 -bottom-4 opacity-10">
-                    <Trophy size={150} strokeWidth={3} />
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-race-card p-6 rounded-4xl text-gray-500 mb-8 border border-white/5 italic text-sm text-center">
-                  Nenhuma prova futura no horizonte.
-                </div>
-              )}
-
+              
               {/* SESSÃO DE DESAFIOS E CONVITES */}
               {pendingChallenges.length > 0 && (
                 <div className="mb-8 flex flex-col gap-3">
@@ -617,7 +624,12 @@ export default function Home() {
                         <p className="text-sm font-bold text-white uppercase leading-tight mb-1">
                           <span className="text-race-volt">{c.challenger.username}</span> te desafiou!
                         </p>
-                        <p className="text-xs text-gray-400 font-medium">Prova: <span className="text-white italic">{c.race.name}</span></p>
+                        <p className="text-xs text-gray-400 font-medium mb-1">Prova: <span className="text-white italic">{c.race.name}</span></p>
+                        {c.duel_type && (
+                          <p className="text-[10px] bg-black/30 inline-block px-2 py-1 rounded border border-white/5 text-gray-300 font-bold tracking-widest uppercase">
+                            MODO: <span className="text-race-volt">{c.duel_type === 'rp' ? 'Superação (RP)' : 'Velocidade'}</span>
+                          </p>
+                        )}
                         <div className="flex gap-2 mt-4">
                           <button onClick={() => handleAcceptChallenge(c)} className="flex-1 bg-race-volt text-black text-xs font-black uppercase tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 hover:scale-105 transition-transform"><Check size={14} strokeWidth={3} /> Aceitar</button>
                           <button onClick={() => handleDeclineChallenge(c.id)} className="px-4 bg-red-500/10 text-red-500 border border-red-500/20 text-xs font-black uppercase tracking-widest rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors">Arregar</button>
@@ -642,8 +654,6 @@ export default function Home() {
                   ))}
                 </div>
               )}
-
-              <Leaderboard />
 
               {/* PASTAS DO CALENDÁRIO */}
               <div className="flex justify-between items-center mb-4 mt-8">

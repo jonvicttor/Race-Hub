@@ -59,7 +59,9 @@ export function Leaderboard() {
         const rankings = profiles.map(profile => {
           const userRaces = races?.filter(r => r.user_id === profile.id) || [];
           const totalKm = userRaces.reduce((acc, race) => {
-            const km = parseFloat(race.distance.replace(/[^\d.]/g, '')) || 0;
+            // 👇 Lógica aprimorada para aceitar vírgula ou ponto perfeitamente
+            const cleanStr = race.distance.replace(/[^\d.,]/g, '').replace(',', '.');
+            const km = parseFloat(cleanStr) || 0;
             return acc + km;
           }, 0);
           
@@ -128,9 +130,10 @@ export function Leaderboard() {
               </span>
             </div>
             
-            <div className="flex flex-col items-end leading-none">
-              <span className="font-black italic text-lg">{entry.totalKm}</span>
-              <span className="text-[9px] uppercase tracking-widest text-gray-500 font-bold">KM</span>
+            <div className="flex items-baseline gap-1">
+              {/* 👇 O .toFixed(2) corta os números extras e garante 2 casas decimais visuais */}
+              <span className="font-black italic text-lg">{entry.totalKm.toFixed(2)}</span>
+              <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">KM</span>
             </div>
           </div>
         ))}

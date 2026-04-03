@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  /* Cores base para o modo claro */
+  /* Fundo quase preto total e cards para alta performance no modo escuro FORÇADO */
+  --background: #050505;
+  --foreground: #ededed;
   --race-volt: #ccff00;
-  --race-card: #f3f4f6;
-  --race-gray: #e5e7eb;
+  --race-card: #121212;
+  --race-gray: #252525;
 }
 
 @theme inline {
@@ -18,17 +18,6 @@
   --color-race-volt: var(--race-volt);
   --color-race-card: var(--race-card);
   --color-race-gray: var(--race-gray);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Fundo quase preto total e cards para alta performance no modo escuro */
-    --background: #050505;
-    --foreground: #ededed;
-    --race-volt: #ccff00;
-    --race-card: #121212;
-    --race-gray: #252525;
-  }
 }
 
 body {
