@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { useRouter } from 'next/navigation';
-import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, FileText, BarChart3, Activity, Target, ChevronRight, Trophy, Map, Timer, Link2, Calendar } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, FileText, BarChart3, Activity, Target, ChevronRight, Trophy, Map, Timer, Link2, Calendar, RefreshCw } from 'lucide-react';
 import { AddRaceModal } from '../components/AddRaceModal'; 
 import Image from 'next/image';
 
@@ -20,6 +20,7 @@ interface Race {
   event_location?: string;
   price?: string | number | null;
   registration_link?: string;
+  map_polyline?: string; // 👇 Novo campo do Mapa
 }
 
 interface Profile {
@@ -29,6 +30,7 @@ interface Profile {
   gender?: 'M' | 'F'; 
   is_owner?: boolean; 
   is_pioneer?: boolean; 
+  strava_access_token?: string; 
 }
 
 interface ChartPoint {
@@ -39,6 +41,65 @@ interface ChartPoint {
   provaKm: number;
   treinoKm: number;
 }
+
+// 👇 Função Mágica que Descriptografa a Rota do Strava (CORRIGIDA) 👇
+const decodePolyline = (str: string) => {
+  let index = 0, lat = 0, lng = 0;
+  const coordinates = [];
+  while (index < str.length) {
+    let b, shift = 0, result = 0;
+    do {
+      b = str.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+    shift = 0;
+    result = 0;
+    do {
+      b = str.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+    coordinates.push([lat / 1e5, lng / 1e5]);
+  }
+  return coordinates;
+};
+
+// 👇 Componente que desenha o Mapa em Neon 👇
+const RouteMap = ({ polyline }: { polyline: string }) => {
+  const coords = useMemo(() => decodePolyline(polyline), [polyline]);
+  
+  if (!coords || coords.length === 0) return null;
+
+  const lats = coords.map(c => c[0]);
+  const lngs = coords.map(c => c[1]);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+
+  const latRange = maxLat - minLat || 0.01;
+  const lngRange = maxLng - minLng || 0.01;
+  
+  const width = 100;
+  const height = (latRange / lngRange) * 100;
+
+  const points = coords.map(([lat, lng]) => {
+    const x = ((lng - minLng) / lngRange) * width;
+    const y = height - ((lat - minLat) / latRange) * height; 
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg viewBox={`-5 -5 ${width + 10} ${height + 10}`} className="w-full h-full drop-shadow-[0_0_5px_rgba(209,255,0,0.8)] overflow-visible">
+      <polyline points={points} fill="none" stroke="#d1ff00" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+};
 
 const getPatentData = (level: number, gender: 'M' | 'F') => {
   if (level >= 60) return { 
@@ -82,36 +143,83 @@ const formatPrice = (priceStr?: string | number | null) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
-export default function ProfilePage() {
+function ProfileContent() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [completedRaces, setCompletedRaces] = useState<Race[]>([]);
+  const [isStravaConnected, setIsStravaConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newGender, setNewGender] = useState<'M' | 'F'>('M');
   const [isSaving, setIsSaving] = useState(false);
-
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [newGoal, setNewGoal] = useState('');
-
   const [viewMode, setViewMode] = useState<'perfil' | 'provas' | 'treinos'>('perfil');
   const [countdown, setCountdown] = useState<string>('');
-  
   const [selectedInsignia, setSelectedInsignia] = useState<{ src: string, title: string } | null>(null);
 
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const hasFetchedToken = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
     async function fetchProfileData() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
         router.push('/login');
         return;
       }
 
-      const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      const { data: r } = await supabase.from('races').select('*').eq('user_id', user.id).order('date', { ascending: false });
+      const code = searchParams.get('code');
+      
+      // 👇 Verifica o código e se já tentou buscar o token 👇
+      if (code && !hasFetchedToken.current) {
+        hasFetchedToken.current = true;
+        
+        // 🚀 LIMPA A URL NA HORA para o Next.js não tentar rodar o mesmo código duas vezes!
+        window.history.replaceState({}, document.title, '/profile');
+
+        try {
+          const response = await fetch('https://www.strava.com/oauth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client_id: 220016, 
+              client_secret: 'ff187c140ae7d513c5e8e297da714062879305ec', // 🔴 COLE SUA SENHA COPIADA DO STRAVA AQUI 🔴
+              code: code,
+              grant_type: 'authorization_code'
+            })
+          });
+
+          const data = await response.json();
+          console.log("Resposta do Strava:", data); // Adicionado para vermos o que ele responde!
+
+          if (data.access_token) {
+            const { error: dbError } = await supabase.from('profiles').update({
+              strava_access_token: data.access_token,
+              strava_refresh_token: data.refresh_token,
+              strava_expires_at: data.expires_at
+            }).eq('id', session.user.id);
+
+            if (dbError) {
+              console.error("Erro do banco de dados (Supabase):", dbError);
+              alert("Erro ao salvar as chaves. Você criou as colunas strava_access_token, strava_refresh_token e strava_expires_at no Supabase?");
+            } else {
+              setIsStravaConnected(true);
+            }
+          } else {
+            console.error("Strava recusou o acesso:", data);
+            alert("O Strava recusou a conexão. Verifique o Console (F12) para detalhes.");
+          }
+        } catch (error) {
+          console.error('Erro na requisição do token:', error);
+        }
+      }
+
+      const { data: p } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+      const { data: r } = await supabase.from('races').select('*').eq('user_id', session.user.id).order('date', { ascending: false });
 
       if (isMounted) {
         if (p) {
@@ -119,16 +227,112 @@ export default function ProfilePage() {
           setNewUsername(p.username); 
           setNewGender(p.gender || 'M');
           setNewGoal(p.monthly_goal?.toString() || '50'); 
+          if (p.strava_access_token) setIsStravaConnected(true);
         }
-        if (r) {
-          setCompletedRaces(r);
-        }
+        if (r) setCompletedRaces(r);
       }
     }
 
     fetchProfileData();
     return () => { isMounted = false; };
-  }, [router]);
+  }, [router, searchParams]);
+
+  const handleConnectStrava = () => {
+    const clientId = '220016';
+    const redirectUri = `${window.location.origin}/profile`; 
+    const stravaAuthUrl = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&approval_prompt=force&scope=activity:read_all`;
+    window.location.href = stravaAuthUrl;
+  };
+
+  const syncStravaActivities = async () => {
+    console.log("Iniciando sincronização...");
+    console.log("Token Atual:", profile?.strava_access_token);
+
+    if (!profile?.strava_access_token) {
+      alert("⚠️ Chave de acesso não encontrada na memória. Dê um F5 na página e tente novamente!");
+      return;
+    }
+    
+    setIsSyncing(true);
+
+    try {
+      const response = await fetch('https://www.strava.com/api/v3/athlete/activities?per_page=5', {
+        headers: { Authorization: `Bearer ${profile.strava_access_token}` }
+      });
+
+      console.log("Status da resposta da API de Atividades:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Detalhes do Erro da API:", errorData);
+        throw new Error('Token inválido ou expirado');
+      }
+
+      const activities = await response.json();
+      console.log("Atividades recebidas:", activities);
+      let newRacesAdded = 0;
+
+      for (const act of activities) {
+        if (act.type !== 'Run') continue;
+
+        const dateStr = act.start_date_local.split('T')[0];
+        const alreadyExists = completedRaces.some(r => r.date === dateStr && r.name === act.name);
+        if (alreadyExists) continue;
+
+        const distKm = (act.distance / 1000).toFixed(2);
+        
+        const timeSec = act.moving_time;
+        const hrs = Math.floor(timeSec / 3600);
+        const mins = Math.floor((timeSec % 3600) / 60);
+        const secs = timeSec % 60;
+        const timeStr = hrs > 0 
+          ? `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}` 
+          : `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+        const speedMps = act.average_speed;
+        let paceStr = '00:00';
+        if (speedMps > 0) {
+          const paceMinDec = (1000 / speedMps) / 60;
+          const paceMin = Math.floor(paceMinDec);
+          const paceSec = Math.floor((paceMinDec - paceMin) * 60);
+          paceStr = `${paceMin.toString().padStart(2, '0')}:${paceSec.toString().padStart(2, '0')}`;
+        }
+
+        // 👇 Enviando a Rota do Mapa (map_polyline) para o Supabase 👇
+        const { error } = await supabase.from('races').insert({
+          user_id: profile.id,
+          name: act.name,
+          date: dateStr,
+          distance: distKm,
+          finish_time: timeStr,
+          pace: paceStr,
+          status: 'Concluído',
+          activity_type: 'treino',
+          event_location: 'Strava',
+          map_polyline: act.map?.summary_polyline || null 
+        });
+
+        if (error) {
+           console.error("Erro ao inserir no Supabase:", error);
+        } else {
+           newRacesAdded++;
+        }
+      }
+
+      if (newRacesAdded > 0) {
+        alert(`A Pista ferveu! 🔥 ${newRacesAdded} novos treinos importados com sucesso.`);
+        window.location.reload(); 
+      } else {
+        alert('Seu diário está em dia! Nenhum treino novo encontrado.');
+      }
+
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao puxar dados do Strava. Verifique o console (F12) para ver os detalhes. Pode ser que o token tenha expirado.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSaveUsernameAndGender = async () => {
     if (!profile || (!newUsername.trim() || newUsername === profile.username) && newGender === profile.gender) {
@@ -352,7 +556,6 @@ export default function ProfilePage() {
     return { linePath: linePathD, areaPath: areaPathD, pointsCoords: coords };
   }, [chartPoints, maxKm, chartHeight, chartWidth]);
 
-  // 👇 CORREÇÃO: Pegar sempre a mais próxima, ignorando a ordem decrescente original do histórico 👇
   const today = new Date().toISOString().split('T')[0];
   const upcomingRace = completedRaces
     .filter(r => r.status !== 'Concluído' && r.date >= today)
@@ -404,14 +607,15 @@ export default function ProfilePage() {
       <div className="flex flex-col gap-4">
         {items.length > 0 ? (
           items.map((race) => (
-            <div key={race.id} className="bg-race-volt/5 border border-race-volt/20 p-4 rounded-2xl flex items-start justify-between">
+            <div key={race.id} className="bg-race-volt/5 border border-race-volt/20 p-4 rounded-2xl flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="bg-race-volt/20 p-3 rounded-full text-race-volt shrink-0">
                   {race.activity_type === 'treino' ? <Activity size={24} /> : <Medal size={24} />}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-white uppercase leading-tight">{race.name}</h4>
+                    {/* 👇 CORREÇÃO DO TAILWIND APLICADA AQUI 👇 */}
+                    <h4 className="font-bold text-white uppercase leading-tight truncate max-w-37.5 sm:max-w-xs">{race.name}</h4>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-xs text-gray-400">{formatDistance(race.distance)}</p>
@@ -431,7 +635,15 @@ export default function ProfilePage() {
                   )}
                 </div>
               </div>
-              <div className="flex flex-col items-end shrink-0">
+
+              {/* 👇 O MAPA ENTRA AQUI SE ELE EXISTIR 👇 */}
+              {race.map_polyline && (
+                <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0">
+                  <RouteMap polyline={race.map_polyline} />
+                </div>
+              )}
+
+              <div className={`flex flex-col items-end shrink-0 ${!race.map_polyline ? 'ml-auto' : ''}`}>
                 <span className="font-black italic text-race-volt">{race.finish_time || '--:--'}</span>
                 <span className="text-[10px] text-gray-500 font-bold uppercase">{race.pace ? `${race.pace} /km` : ''}</span>
               </div>
@@ -455,16 +667,44 @@ export default function ProfilePage() {
       {viewMode === 'perfil' && (
         <div className="animate-in fade-in duration-300">
           
-          <div className="flex items-center gap-4 mb-8">
-            <button 
-              onClick={() => router.push('/')} 
-              className="p-2 bg-race-card rounded-xl border border-white/5 text-gray-400 hover:text-white"
-            >
-              <ChevronLeft size={24} />
-            </button>
-            <h1 className="text-xl font-black uppercase italic tracking-tighter">
-              Meu <span className="text-race-volt">Perfil</span>
-            </h1>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => router.push('/')} 
+                className="p-2 bg-race-card rounded-xl border border-white/5 text-gray-400 hover:text-white"
+              >
+                <ChevronLeft size={24} />
+              </button>
+              <h1 className="text-xl font-black uppercase italic tracking-tighter">
+                Meu <span className="text-race-volt">Perfil</span>
+              </h1>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {isStravaConnected && (
+                <button 
+                  onClick={syncStravaActivities}
+                  disabled={isSyncing}
+                  className="p-2 bg-race-volt/10 text-race-volt border border-race-volt/20 rounded-xl hover:bg-race-volt hover:text-black transition-all disabled:opacity-50"
+                  title="Sincronizar Strava"
+                >
+                  <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
+                </button>
+              )}
+
+              <button 
+                onClick={isStravaConnected ? undefined : handleConnectStrava}
+                disabled={isStravaConnected}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${
+                  isStravaConnected 
+                  ? 'bg-green-500/10 text-green-500 border border-green-500/20' 
+                  : 'bg-orange-600 text-white hover:bg-orange-500 active:scale-95 shadow-lg shadow-orange-600/20'
+                }`}
+              >
+                <Image src="/strava-icon.png" alt="Strava" width={14} height={14} className={isStravaConnected ? 'opacity-50 grayscale' : ''} />
+                {isStravaConnected ? 'Conectado' : 'Conectar Strava'}
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col items-center mb-8 relative">
@@ -730,9 +970,9 @@ export default function ProfilePage() {
                 {pointsCoords.map((coord, index) => {
                   let textPositionClass = "-translate-x-1/2 left-1/2"; 
                   if (index === pointsCoords.length - 1) {
-                    textPositionClass = "-translate-x-[85%] left-1/2"; 
+                    textPositionClass = "-translate-x-[100%] left-0 pr-2"; 
                   } else if (index === 0) {
-                    textPositionClass = "-translate-x-[15%] left-1/2"; 
+                    textPositionClass = "translate-x-0 left-0 pl-2"; 
                   }
 
                   return (
@@ -848,5 +1088,13 @@ export default function ProfilePage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center text-race-volt font-black uppercase italic">Carregando Atleta...</div>}>
+      <ProfileContent />
+    </Suspense>
   );
 }

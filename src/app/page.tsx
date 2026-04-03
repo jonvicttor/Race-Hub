@@ -1,14 +1,21 @@
 'use client'; 
 
-import { useState, useEffect, useCallback } from 'react'; 
+import { useState, useEffect, useCallback } from 'react';
 import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic'; // 👇 O import dinâmico do Next.js
 import { AddRaceModal } from './components/AddRaceModal';
 import { EditRaceModal } from './components/EditRaceModal';
 import { AddFriendModal } from './components/AddFriendModal'; 
 import { ChallengeModal } from './components/ChallengeModal'; 
 import { Leaderboard } from './components/Leaderboard'; 
+
+// 👇 Carregando o Mapa de forma inteligente (Lazy Loading) 👇
+const RouteMap = dynamic(() => import('./components/RouteMap'), { 
+  ssr: false, 
+  loading: () => <div className="w-full h-full bg-[#121212] animate-pulse rounded-xl flex items-center justify-center text-race-volt text-xs font-bold uppercase italic border border-white/5">Carregando Mapa...</div>
+});
 
 interface Race {
   id: string;
@@ -27,6 +34,7 @@ interface Race {
   user_id: string;
   activity_type?: string;
   map_url?: string;
+  map_polyline?: string; 
 }
 
 interface Profile {
@@ -289,6 +297,7 @@ export default function Home() {
   const listProvas = races.filter(r => r.activity_type !== 'treino');
   const listTreinos = races.filter(r => r.activity_type === 'treino');
 
+  // 👇 Renderização da lista da Agenda (Calendário) com os mapas pequenos 👇
   const renderRaceList = (items: Race[], title: string) => (
     <div className="animate-in slide-in-from-right-8 fade-in duration-300">
       <div className="flex items-center gap-4 mb-6">
@@ -306,7 +315,7 @@ export default function Home() {
               <div className="flex justify-between items-start">
                 <div className="pr-4">
                   <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-lg leading-tight uppercase text-white">{race.name}</h4>
+                    <h4 className="font-bold text-lg leading-tight uppercase text-white truncate max-w-37.5 sm:max-w-xs">{race.name}</h4>
                     {race.challenged_by && (
                        <span className="text-[10px] text-black bg-race-volt px-1.5 py-0.5 rounded font-bold uppercase italic flex items-center gap-1 shadow-sm shadow-race-volt/30">
                           <Flame size={10} /> Desafio
@@ -317,7 +326,15 @@ export default function Home() {
                     {race.status}
                   </p>
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
+                
+                {/* O MAPA PEQUENO DA AGENDA */}
+                {race.map_polyline && (
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0 rounded overflow-hidden relative z-0 border border-white/10">
+                    <RouteMap polyline={race.map_polyline} />
+                  </div>
+                )}
+
+                <div className={`flex flex-col items-end gap-2 shrink-0 ${!race.map_polyline ? 'ml-auto' : ''}`}>
                   <span className="text-race-volt font-black italic whitespace-nowrap">{formatDistance(race.distance)}</span>
                   <div className="flex gap-2 mt-1">
                     {profiles.length > 0 && race.activity_type !== 'treino' && (
@@ -442,6 +459,13 @@ export default function Home() {
                 {/* Título */}
                 <h3 className="text-lg font-black uppercase italic text-white">{activity.name}</h3>
 
+                {/* 👇 O MAPA ENTRA AQUI SE ELE EXISTIR (ESTILO POST) 👇 */}
+                {activity.map_polyline && (
+                  <div className="w-full h-48 sm:h-64 bg-black/40 rounded-xl border border-white/5 overflow-hidden relative z-0 mt-2 mb-2">
+                    <RouteMap polyline={activity.map_polyline} />
+                  </div>
+                )}
+
                 {/* Status Row */}
                 <div className="grid grid-cols-3 gap-2">
                   <div className="flex flex-col">
@@ -459,7 +483,6 @@ export default function Home() {
                 </div>
 
                 {/* Ações (Volts e Comentários) */}
-                {/* Removido o bloco do mapa, garantindo que as ações fiquem logo abaixo */}
                 <div className="flex flex-col gap-3 mt-2 pt-4 border-t border-white/5">
                   <div className="flex gap-6">
                     <button 
