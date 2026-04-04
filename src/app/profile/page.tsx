@@ -34,6 +34,7 @@ interface Profile {
   strava_access_token?: string; 
   strava_refresh_token?: string; 
   strava_expires_at?: number; 
+  strava_athlete_id?: string; // 👈 Adicionamos o campo do ID do Atleta aqui
   avatar_url?: string; 
 }
 
@@ -182,11 +183,16 @@ function ProfileContent() {
 
           const data = await response.json();
           if (data.access_token) {
+            // 👇 Captura também o athlete.id retornado pelo Strava 👇
+            const athleteId = data.athlete?.id ? String(data.athlete.id) : null;
+            
             await supabase.from('profiles').update({
               strava_access_token: data.access_token,
               strava_refresh_token: data.refresh_token,
-              strava_expires_at: data.expires_at
+              strava_expires_at: data.expires_at,
+              ...(athleteId && { strava_athlete_id: athleteId }) // Salva o ID se existir
             }).eq('id', session.user.id);
+            
             setIsStravaConnected(true);
           } else {
             alert("O Strava recusou a conexão.");
