@@ -1,10 +1,11 @@
 'use client'; 
 
 import { useState, useEffect, useCallback } from 'react';
-import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { AddRaceModal } from './components/AddRaceModal';
 import { EditRaceModal } from './components/EditRaceModal';
 import { AddFriendModal } from './components/AddFriendModal'; 
@@ -48,7 +49,10 @@ interface Challenge {
   challenged_id: string;
   race_id: string;
   status: string;
+  winner_id?: string;
   duel_type?: string;
+  challenger_finish_time?: string; 
+  challenged_finish_time?: string; 
   race: Race;
   challenger: Profile;
 }
@@ -63,6 +67,14 @@ interface ActivityComment {
     username: string;
   };
 }
+
+const timeToSeconds = (timeStr: string) => {
+  if (!timeStr) return 0; 
+  const parts = timeStr.split(':').map(Number);
+  if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+  if (parts.length === 2) return (parts[0] * 60) + parts[1];
+  return 0;
+};
 
 const formatDistance = (dist?: string) => {
   if (!dist) return '';
@@ -89,6 +101,7 @@ export default function Home() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [pendingRequests, setPendingRequests] = useState<Profile[]>([]);
   const [pendingChallenges, setPendingChallenges] = useState<Challenge[]>([]); 
+  const [finishedDuels, setFinishedDuels] = useState<Challenge[]>([]); 
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [editingRace, setEditingRace] = useState<Race | null>(null);
   const [challengingRace, setChallengingRace] = useState<Race | null>(null); 
@@ -165,6 +178,15 @@ export default function Home() {
             commentsMap[c.race_id].push(c as ActivityComment);
           });
           setComments(commentsMap);
+
+          const { data: duelsFinalizados } = await supabase
+            .from('duels')
+            .select('*, race:race_id(name, date)')
+            .eq('status', 'finalizado');
+
+          if (duelsFinalizados) {
+            setFinishedDuels(duelsFinalizados as Challenge[]);
+          }
         }
       }
 
@@ -328,10 +350,12 @@ export default function Home() {
                   </p>
                 </div>
                 
-                {race.map_polyline && (
+                {race.map_polyline ? (
                   <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0 rounded overflow-hidden relative z-0 border border-white/10">
                     <RouteMap polyline={race.map_polyline} />
                   </div>
+                ) : (
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-0 shrink-0"></div>
                 )}
 
                 <div className={`flex flex-col items-end gap-2 shrink-0 ${!race.map_polyline ? 'ml-auto' : ''}`}>
@@ -378,6 +402,8 @@ export default function Home() {
     </div>
   );
 
+  const renderedDuels = new Set<string>();
+
   return (
     <main className="min-h-screen bg-background text-foreground p-6 font-sans relative pb-24">
       {/* Header */}
@@ -395,8 +421,12 @@ export default function Home() {
             <LogOut size={20} />
           </button>
           <button onClick={() => router.push('/profile')} className="w-10 h-10 rounded-full border-2 border-race-volt p-0.5 hover:scale-105 active:scale-95 transition-transform" title="Ver Meu Perfil">
-            <div className="w-full h-full bg-race-gray rounded-full flex items-center justify-center text-[10px] text-foreground font-bold uppercase">
-              {userProfile?.username?.substring(0, 2) || '??'}
+            <div className="w-full h-full bg-race-gray rounded-full flex items-center justify-center text-[10px] text-foreground font-bold uppercase overflow-hidden relative">
+              {userProfile?.avatar_url ? (
+                <Image src={userProfile.avatar_url} alt="Meu Avatar" fill className="object-cover" />
+              ) : (
+                <>{userProfile?.username?.substring(0, 2) || '??'}</>
+              )}
             </div>
           </button>
         </div>
@@ -453,7 +483,59 @@ export default function Home() {
           </div>
         ) : (
           <div className="bg-race-card p-6 rounded-4xl text-gray-500 mb-8 border border-white/5 italic text-sm text-center hidden">
-            {/* Oculto intencionalmente para não poluir quando não houver prova */}
+          </div>
+        )}
+      </div>
+
+      {/* ===================== 🚨 NOTIFICAÇÕES GLOBAIS VIP (DESAFIOS E AMIGOS) 🚨 ===================== */}
+      <div className="flex flex-col gap-3 mb-8">
+        
+        {/* DESAFIOS RECEBIDOS */}
+        {pendingChallenges.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <h3 className="text-xs font-bold uppercase text-race-volt tracking-widest mb-1 flex items-center gap-2">
+              <Flame size={16} /> Desafios Pendentes
+            </h3>
+            {pendingChallenges.map(c => (
+              <div key={c.id} className="bg-linear-to-r from-race-volt/20 to-black border border-race-volt/30 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+                <div className="relative z-10">
+                  <p className="text-sm font-bold text-white uppercase leading-tight mb-1">
+                    <span className="text-race-volt">{c.challenger.username}</span> te desafiou!
+                  </p>
+                  <p className="text-xs text-gray-400 font-medium mb-1">Prova: <span className="text-white italic">{c.race.name}</span></p>
+                  {c.duel_type && (
+                    <p className="text-[10px] bg-black/30 inline-block px-2 py-1 rounded border border-white/5 text-gray-300 font-bold tracking-widest uppercase">
+                      MODO: <span className="text-race-volt">{c.duel_type === 'rp' ? 'Superação (RP)' : 'Velocidade'}</span>
+                    </p>
+                  )}
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={() => handleAcceptChallenge(c)} className="flex-1 bg-race-volt text-black text-xs font-black uppercase tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 hover:scale-105 transition-transform"><Check size={14} strokeWidth={3} /> Aceitar</button>
+                    <button onClick={() => handleDeclineChallenge(c.id)} className="px-4 bg-red-500/10 text-red-500 border border-red-500/20 text-xs font-black uppercase tracking-widest rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors">Arregar</button>
+                  </div>
+                </div>
+                <Flame className="absolute -right-4 -bottom-4 text-race-volt/10" size={100} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* CONVITES DE PELOTÃO RECEBIDOS */}
+        {pendingRequests.length > 0 && (
+          <div className="flex flex-col gap-2 mt-2">
+            <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest mb-1 flex items-center gap-2">
+              🤝 Convites do Pelotão
+            </h3>
+            {pendingRequests.map(p => (
+              <div key={p.id} className="bg-race-volt/10 border border-race-volt/30 rounded-2xl p-3 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-race-volt/20 flex items-center justify-center text-race-volt font-black uppercase text-[10px] overflow-hidden relative">
+                    {p.avatar_url ? <Image src={p.avatar_url} alt="Avatar" fill className="object-cover"/> : p.username.substring(0, 2)}
+                  </div>
+                  <span className="text-xs font-bold text-white uppercase">{p.username} enviou um convite!</span>
+                </div>
+                <button onClick={() => handleAcceptFriend(p.id)} className="bg-race-volt text-black p-2 rounded-lg hover:scale-105 transition-transform"><Check size={16} strokeWidth={3} /></button>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -472,27 +554,113 @@ export default function Home() {
       {mainTab === 'feed' && (
         <div className="animate-in fade-in duration-300 flex flex-col gap-6">
           
-          {/* Movi o Leaderboard para cá! */}
           <Leaderboard />
 
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Feed do Pelotão</h3>
+          {/* ================= SESSÃO DO PELOTÃO ================= */}
+          <div className="mt-4 mb-2">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Seu Pelotão</h3>
+              <AddFriendModal />
+            </div>
+            
+            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+              {profiles.length > 0 ? profiles.map((p) => (
+                <button key={p.id} onClick={() => router.push(`/profile/${p.id}`)} className="flex flex-col items-center gap-2 min-w-14 hover:scale-105 transition-transform group">
+                  <div className="w-14 h-14 rounded-2xl bg-race-card border border-white/10 group-hover:border-race-volt/50 flex items-center justify-center font-bold text-race-volt text-xl uppercase shadow-sm transition-colors overflow-hidden relative">
+                    {p.avatar_url ? <Image src={p.avatar_url} alt="Avatar" fill className="object-cover"/> : (p.username?.[0] || '?')}
+                  </div>
+                  <span className="text-[10px] font-medium text-gray-400 group-hover:text-white transition-colors">{p.username}</span>
+                </button>
+              )) : (
+                <p className="text-gray-600 text-[10px] italic py-4">Você ainda não recrutou ninguém pro seu Pelotão.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center mb-2 mt-2 pt-6 border-t border-white/5">
+            <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Feed de Atividades</h3>
             <AddRaceModal />
           </div>
 
           {feedRaces.length > 0 ? feedRaces.map((activity) => {
+            // 👇 LÓGICA EXATA PARA ACHAR O DUELO DO ATLETA 👇
+            const duel = finishedDuels.find(d => 
+              d.race?.name?.toLowerCase() === activity.name.toLowerCase() && 
+              d.race?.date === activity.date &&
+              (d.challenger_id === activity.user_id || d.challenged_id === activity.user_id)
+            );
+
+            // Se for um duelo finalizado, desenha a UI de Batalha (só 1 vez por duelo)
+            if (duel) {
+              if (renderedDuels.has(duel.id)) return null; 
+              renderedDuels.add(duel.id);
+
+              const winnerId = duel.winner_id;
+              const loserId = duel.challenger_id === winnerId ? duel.challenged_id : duel.challenger_id;
+              
+              const winnerProfile = profiles.find(p => p.id === winnerId) || (userProfile?.id === winnerId ? userProfile : null);
+              const loserProfile = profiles.find(p => p.id === loserId) || (userProfile?.id === loserId ? userProfile : null);
+
+              const winnerTime = duel.challenger_id === winnerId ? duel.challenger_finish_time : duel.challenged_finish_time;
+              const loserTime = duel.challenger_id === loserId ? duel.challenger_finish_time : duel.challenged_finish_time;
+
+              const diffSecs = Math.abs(timeToSeconds(winnerTime || '00:00:00') - timeToSeconds(loserTime || '00:00:00'));
+              const diffString = diffSecs >= 60 ? `${Math.floor(diffSecs/60)}m ${diffSecs%60}s` : `${diffSecs}s`;
+
+              return (
+                <div key={`duel-${duel.id}`} className="bg-[#121212] border border-yellow-500/30 rounded-3xl p-6 shadow-[0_0_30px_rgba(234,179,8,0.1)] flex flex-col gap-4 relative overflow-hidden">
+                  <div className="absolute -top-10 -right-10 w-32 h-32 bg-yellow-500/20 blur-[50px] rounded-full pointer-events-none"></div>
+                  
+                  <div className="flex flex-col items-center text-center relative z-10">
+                    <span className="text-yellow-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 mb-4">
+                      <Crown size={14} strokeWidth={3} /> Resultado do Duelo
+                    </span>
+                    
+                    <div className="w-16 h-16 rounded-full flex items-center justify-center font-black text-xl uppercase overflow-hidden relative border-2 border-yellow-500 bg-yellow-500/20 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)] mb-2">
+                      {winnerProfile?.avatar_url ? <Image src={winnerProfile.avatar_url} alt="Winner" fill className="object-cover"/> : (winnerProfile?.username?.substring(0, 2) || '??')}
+                    </div>
+                    
+                    <h3 className="text-xl font-black uppercase italic text-white">{winnerProfile?.username} VENCEU!</h3>
+                    <p className="text-xs text-gray-400 font-medium">Na prova <span className="text-white italic">{activity.name}</span></p>
+                  </div>
+
+                  <div className="bg-black/50 border border-white/5 rounded-2xl p-4 flex justify-between items-center relative z-10 mt-2">
+                    <div className="flex flex-col items-center flex-1">
+                      <span className="text-yellow-500 font-black text-xs uppercase tracking-widest mb-1 flex items-center gap-1">
+                        <Crown size={10} /> {winnerProfile?.username}
+                      </span>
+                      <span className="text-2xl font-black text-white italic">{winnerTime}</span>
+                    </div>
+                    <div className="flex flex-col items-center px-4">
+                      <span className="text-gray-600 font-black italic text-sm">VS</span>
+                    </div>
+                    <div className="flex flex-col items-center flex-1 opacity-60">
+                      <span className="text-gray-400 font-bold text-xs uppercase tracking-widest mb-1">{loserProfile?.username}</span>
+                      <span className="text-xl font-bold text-white italic">{loserTime}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-center relative z-10 bg-yellow-500/10 border border-yellow-500/20 rounded-xl py-2 mt-2">
+                    <p className="text-yellow-500 text-[10px] font-black uppercase tracking-widest">
+                      Vitória por {diffString} de diferença!
+                    </p>
+                  </div>
+                </div>
+              );
+            }
+
+            // Se a corrida for normal (não for duelo), renderiza o card padrão
             const athlete = profiles.find(p => p.id === activity.user_id) || userProfile;
             const raceLikes = likes[activity.id] || [];
             const hasLiked = userProfile && raceLikes.includes(userProfile.id);
             const raceComments = comments[activity.id] || [];
 
             return (
-              <div key={activity.id} className="bg-[#121212] border border-white/5 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
-                {/* Header do Card */}
-                <div className="flex items-center justify-between">
+              <div key={activity.id} className="bg-[#121212] border border-white/5 rounded-3xl p-5 shadow-lg flex flex-col gap-4 relative overflow-hidden">
+                <div className="flex items-center justify-between relative z-10">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-race-volt/20 border border-race-volt/50 flex items-center justify-center text-race-volt font-black uppercase">
-                      {athlete?.username?.substring(0, 2) || '??'}
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center font-black uppercase overflow-hidden relative bg-race-volt/20 border border-race-volt/50 text-race-volt">
+                      {athlete?.avatar_url ? <Image src={athlete.avatar_url} alt="Avatar" fill className="object-cover"/> : (athlete?.username?.substring(0, 2) || '??')}
                     </div>
                     <div>
                       <h4 className="font-bold text-white leading-none">{athlete?.username || 'Atleta'}</h4>
@@ -516,18 +684,19 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Título */}
-                <h3 className="text-lg font-black uppercase italic text-white">{activity.name}</h3>
+                <div className="flex flex-wrap items-center gap-3 relative z-10">
+                  <h3 className="text-lg font-black uppercase italic text-white">{activity.name}</h3>
+                </div>
 
-                {/* MAPA ESTILO POST */}
-                {activity.map_polyline && (
+                {activity.map_polyline ? (
                   <div className="w-full h-48 sm:h-64 bg-black/40 rounded-xl border border-white/5 overflow-hidden relative z-0 mt-2 mb-2">
                     <RouteMap polyline={activity.map_polyline} />
                   </div>
+                ) : (
+                   <div className="w-full h-2 mt-2 mb-2"></div>
                 )}
 
-                {/* Status Row */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2 relative z-10">
                   <div className="flex flex-col">
                     <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Distância</span>
                     <span className="text-base font-black text-white">{formatDistance(activity.distance)}</span>
@@ -542,8 +711,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Ações (Volts e Comentários) */}
-                <div className="flex flex-col gap-3 mt-2 pt-4 border-t border-white/5">
+                <div className="flex flex-col gap-3 mt-2 pt-4 border-t border-white/5 relative z-10">
                   <div className="flex gap-6">
                     <button 
                       onClick={() => handleToggleVolt(activity.id)} 
@@ -561,7 +729,6 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* Sessão Expansível de Comentários */}
                   {activeCommentRaceId === activity.id && (
                     <div className="mt-2 flex flex-col gap-3 bg-black/20 p-3 rounded-xl border border-white/5 animate-in fade-in slide-in-from-top-2">
                       {raceComments.length > 0 ? raceComments.map(c => (
@@ -595,7 +762,7 @@ export default function Home() {
               </div>
             );
           }) : (
-            <div className="text-center p-8 border border-dashed border-white/10 rounded-3xl text-gray-500 text-sm italic mt-10">
+            <div className="text-center p-8 border border-dashed border-white/10 rounded-3xl text-gray-500 text-sm italic mt-4">
               O feed está vazio. Seja o primeiro a suar a camisa!
             </div>
           )}
@@ -612,51 +779,7 @@ export default function Home() {
           {calViewMode === 'menu' && (
             <div className="animate-in fade-in duration-300">
               
-              {/* SESSÃO DE DESAFIOS E CONVITES */}
-              {pendingChallenges.length > 0 && (
-                <div className="mb-8 flex flex-col gap-3">
-                  <h3 className="text-xs font-bold uppercase text-race-volt tracking-widest mb-1 flex items-center gap-2">
-                    <Flame size={16} /> Desafios do Pelotão
-                  </h3>
-                  {pendingChallenges.map(c => (
-                    <div key={c.id} className="bg-linear-to-r from-race-volt/20 to-black border border-race-volt/30 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden">
-                      <div className="relative z-10">
-                        <p className="text-sm font-bold text-white uppercase leading-tight mb-1">
-                          <span className="text-race-volt">{c.challenger.username}</span> te desafiou!
-                        </p>
-                        <p className="text-xs text-gray-400 font-medium mb-1">Prova: <span className="text-white italic">{c.race.name}</span></p>
-                        {c.duel_type && (
-                          <p className="text-[10px] bg-black/30 inline-block px-2 py-1 rounded border border-white/5 text-gray-300 font-bold tracking-widest uppercase">
-                            MODO: <span className="text-race-volt">{c.duel_type === 'rp' ? 'Superação (RP)' : 'Velocidade'}</span>
-                          </p>
-                        )}
-                        <div className="flex gap-2 mt-4">
-                          <button onClick={() => handleAcceptChallenge(c)} className="flex-1 bg-race-volt text-black text-xs font-black uppercase tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 hover:scale-105 transition-transform"><Check size={14} strokeWidth={3} /> Aceitar</button>
-                          <button onClick={() => handleDeclineChallenge(c.id)} className="px-4 bg-red-500/10 text-red-500 border border-red-500/20 text-xs font-black uppercase tracking-widest rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors">Arregar</button>
-                        </div>
-                      </div>
-                      <Flame className="absolute -right-4 -bottom-4 text-race-volt/10" size={100} />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {pendingRequests.length > 0 && (
-                <div className="mb-6 flex flex-col gap-2">
-                  {pendingRequests.map(p => (
-                    <div key={p.id} className="bg-race-volt/10 border border-race-volt/30 rounded-2xl p-3 flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-race-volt/20 flex items-center justify-center text-race-volt font-black uppercase text-[10px]">{p.username.substring(0, 2)}</div>
-                        <span className="text-xs font-bold text-white uppercase">{p.username} enviou um convite!</span>
-                      </div>
-                      <button onClick={() => handleAcceptFriend(p.id)} className="bg-race-volt text-black p-2 rounded-lg hover:scale-105 transition-transform"><Check size={16} strokeWidth={3} /></button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* PASTAS DO CALENDÁRIO */}
-              <div className="flex justify-between items-center mb-4 mt-8">
+              <div className="flex justify-between items-center mb-4 mt-2">
                 <h3 className="text-[10px] font-bold uppercase text-gray-500 tracking-widest flex items-center gap-1.5">
                   <Calendar size={12} className="text-race-volt" /> Agenda
                 </h3>
@@ -693,24 +816,6 @@ export default function Home() {
                     <ChevronRight size={12} className="text-race-volt" />
                   </div>
                 </button>
-              </div>
-
-              {/* Pelotão (Amigos) */}
-              <div className="flex justify-between items-center mb-4 border-t border-white/5 pt-8">
-                <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Pelotão</h3>
-                <AddFriendModal />
-              </div>
-              <div className="flex gap-4 mb-10 overflow-x-auto pb-2 scrollbar-hide">
-                {profiles.length > 0 ? profiles.map((p) => (
-                  <button key={p.id} onClick={() => router.push(`/profile/${p.id}`)} className="flex flex-col items-center gap-2 min-w-14 hover:scale-105 transition-transform group">
-                    <div className="w-14 h-14 rounded-2xl bg-race-card border border-white/10 group-hover:border-race-volt/50 flex items-center justify-center font-bold text-race-volt text-xl uppercase shadow-sm transition-colors">
-                      {p.username?.[0] || '?'}
-                    </div>
-                    <span className="text-[10px] font-medium text-gray-400 group-hover:text-white transition-colors">{p.username}</span>
-                  </button>
-                )) : (
-                  <p className="text-gray-600 text-[10px] italic">Você ainda não recrutou ninguém pro seu Pelotão.</p>
-                )}
               </div>
 
             </div>

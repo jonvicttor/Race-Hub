@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Trophy, Medal, Route } from 'lucide-react';
+import Image from 'next/image';
 
 interface LeaderboardEntry {
   id: string;
   username: string;
+  avatar_url?: string; // 👇 Adicionamos a foto do perfil
   totalKm: number;
 }
 
@@ -35,10 +37,10 @@ export function Leaderboard() {
         userIds = [...userIds, ...friendIds];
       }
 
-      // 2. Busca os perfis da galera do Pelotão
+      // 2. Busca os perfis da galera do Pelotão (AGORA COM A FOTO)
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username')
+        .select('id, username, avatar_url')
         .in('id', userIds);
 
       // 3. Busca as corridas concluídas no MÊS ATUAL
@@ -59,7 +61,6 @@ export function Leaderboard() {
         const rankings = profiles.map(profile => {
           const userRaces = races?.filter(r => r.user_id === profile.id) || [];
           const totalKm = userRaces.reduce((acc, race) => {
-            // 👇 Lógica aprimorada para aceitar vírgula ou ponto perfeitamente
             const cleanStr = race.distance.replace(/[^\d.,]/g, '').replace(',', '.');
             const km = parseFloat(cleanStr) || 0;
             return acc + km;
@@ -68,6 +69,7 @@ export function Leaderboard() {
           return {
             id: profile.id,
             username: profile.username,
+            avatar_url: profile.avatar_url,
             totalKm
           };
         });
@@ -99,7 +101,7 @@ export function Leaderboard() {
   const currentMonthName = new Date().toLocaleString('pt-BR', { month: 'long' });
 
   return (
-    <div className="bg-race-card border border-white/5 p-5 rounded-3xl mb-8 flex flex-col gap-4 relative overflow-hidden">
+    <div className="bg-race-card border border-white/5 p-5 rounded-3xl flex flex-col gap-4 relative overflow-hidden">
       {/* Background Decorativo */}
       <Route className="absolute -right-4 -bottom-4 text-white/5" size={120} strokeWidth={1} />
       
@@ -120,18 +122,30 @@ export function Leaderboard() {
             }`}
           >
             <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs ${
-                index === 0 ? 'bg-race-volt text-black' : 'bg-white/10 text-gray-400'
+              {/* 👇 ÁREA DA FOTO OU MEDALHA 👇 */}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs overflow-hidden relative border-2 ${
+                index === 0 ? 'border-race-volt bg-race-volt text-black' : 'border-white/10 bg-white/10 text-gray-400'
               }`}>
-                {index === 0 ? <Medal size={14} /> : `${index + 1}º`}
+                {entry.avatar_url ? (
+                  <Image src={entry.avatar_url} alt={entry.username} fill className="object-cover" />
+                ) : (
+                  index === 0 ? <Medal size={16} /> : `${index + 1}º`
+                )}
+                
+                {/* Mini Badge de Posição (só aparece se a pessoa tiver foto, pra não perder a numeração) */}
+                {entry.avatar_url && (
+                   <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black border border-black ${index === 0 ? 'bg-race-volt text-black' : 'bg-gray-700 text-white'}`}>
+                     {index + 1}
+                   </div>
+                )}
               </div>
+              
               <span className={`font-bold uppercase text-sm ${index === 0 ? 'text-race-volt' : ''}`}>
                 {entry.username}
               </span>
             </div>
             
             <div className="flex items-baseline gap-1">
-              {/* 👇 O .toFixed(2) corta os números extras e garante 2 casas decimais visuais */}
               <span className="font-black italic text-lg">{entry.totalKm.toFixed(2)}</span>
               <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">KM</span>
             </div>

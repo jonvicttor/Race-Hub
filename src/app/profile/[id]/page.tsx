@@ -136,7 +136,8 @@ export default function PublicProfilePage() {
         <button onClick={() => router.back()} className="p-2 bg-white/5 rounded-xl border border-white/10 text-gray-400">
           <ChevronLeft size={24} />
         </button>
-        <button onClick={handleRemoveFriend} disabled={removing} className="px-3 py-2 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 text-[10px] font-black uppercase tracking-widest">
+        <button onClick={handleRemoveFriend} disabled={removing} className="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 text-[10px] font-black uppercase tracking-widest">
+          <UserMinus size={14} strokeWidth={2.5} />
           {removing ? '...' : 'Excluir'}
         </button>
       </div>
@@ -163,11 +164,11 @@ export default function PublicProfilePage() {
 
         <h2 className="text-4xl font-black italic text-white uppercase mt-8 tracking-tighter">{profile.username}</h2>
         <div className="flex items-center gap-2 mt-2">
-          <span className="text-[10px] text-race-volt font-black uppercase tracking-[0.2em] italic border-b-2 border-race-volt/30 pb-1">Caçador de Provas</span>
+          <span className="text-[10px] text-race-volt font-black uppercase tracking-[0.2em] italic border-b-2 border-race-volt/30 pb-1">Atleta Pelotão • {insigniaName}</span>
         </div>
 
-        {/* Barra de Progresso XP */}
-        <div className="w-full max-w-[200px] h-1.5 bg-white/5 rounded-full mt-6 overflow-hidden border border-white/5">
+        {/* 👇 Barra de Progresso XP (Resolvendo o erro do ESLint) 👇 */}
+        <div className="w-full max-w-50 h-1.5 bg-white/5 rounded-full mt-6 overflow-hidden border border-white/5">
            <div className="h-full bg-race-volt shadow-[0_0_15px_rgba(204,255,0,0.6)] transition-all duration-1000 ease-out" style={{ width: `${progress}%` }}></div>
         </div>
       </div>

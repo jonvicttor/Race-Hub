@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, ChangeEvent } from 'react';
-import { X, Save, Trash2, Timer, Zap, Calculator, Link2 } from 'lucide-react';
+import { X, Save, Trash2, Timer, Zap, Calculator, Link2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Race {
@@ -16,6 +16,7 @@ interface Race {
   event_location?: string;
   price?: string | number | null; 
   activity_type?: string;
+  challenged_by?: string | null;
 }
 
 interface EditRaceModalProps {
@@ -24,8 +25,17 @@ interface EditRaceModalProps {
   onUpdate: () => void;
 }
 
+const timeToSeconds = (timeStr: string) => {
+  if (!timeStr) return Infinity; 
+  const parts = timeStr.split(':').map(Number);
+  if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+  if (parts.length === 2) return (parts[0] * 60) + parts[1];
+  return Infinity;
+};
+
 export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
   const [loading, setLoading] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   
   const initialDateParts = race.date ? race.date.split('-') : [];
   const initialDate = initialDateParts.length === 3 ? `${initialDateParts[2]}/${initialDateParts[1]}/${initialDateParts[0]}` : '';
@@ -83,6 +93,82 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
     setPace(`${String(paceMinutes).padStart(2, '0')}:${String(paceSeconds).padStart(2, '0')}`);
   };
 
+  // 👇 LÓGICA DO JUIZ CORRIGIDA COM OS NOMES EXATOS DAS COLUNAS 👇
+  const resolveDuel = async (currentUserId: string, finalFinishTime: string, raceName: string, raceDate: string) => {
+    if (status !== 'Concluído') return;
+
+    try {
+      const { data: duels } = await supabase
+        .from('duels')
+        .select('*, race:race_id(name, date)')
+        .or(`challenger_id.eq.${currentUserId},challenged_id.eq.${currentUserId}`)
+        .eq('status', 'aceito');
+
+      const duel = duels?.find(d => 
+        d.race?.name?.toLowerCase() === raceName.toLowerCase() && 
+        d.race?.date?.startsWith(raceDate)
+      );
+
+      if (!duel) return;
+
+      const isChallenger = duel.challenger_id === currentUserId;
+      const opponentId = isChallenger ? duel.challenged_id : duel.challenger_id;
+
+      // 1. Salva o tempo (Nomes das colunas idênticos ao banco)
+      const updateField = isChallenger ? { challenger_finish_time: finalFinishTime } : { challenged_finish_time: finalFinishTime };
+      const { error: updateError } = await supabase
+        .from('duels')
+        .update(updateField)
+        .eq('id', duel.id);
+
+      if (updateError) {
+        console.error("O Supabase bloqueou a atualização:", updateError);
+        alert("Ops! Ocorreu um erro ao salvar o tempo do duelo no banco de dados.");
+        return;
+      }
+
+      // 2. Agora sim, lê o placar atualizado para dar o veredicto
+      const { data: updatedDuel } = await supabase
+        .from('duels')
+        .select('*')
+        .eq('id', duel.id)
+        .single();
+      
+      if (!updatedDuel) return;
+
+      // 3. O Veredicto Final (Usando finish_time)
+      if (updatedDuel.challenger_finish_time && updatedDuel.challenged_finish_time) {
+        const challengerSeconds = timeToSeconds(updatedDuel.challenger_finish_time);
+        const challengedSeconds = timeToSeconds(updatedDuel.challenged_finish_time);
+        
+        let winnerId = null;
+
+        if (challengerSeconds < challengedSeconds) {
+          winnerId = updatedDuel.challenger_id;
+        } else if (challengedSeconds < challengerSeconds) {
+          winnerId = updatedDuel.challenged_id;
+        }
+
+        await supabase.from('duels').update({
+          status: 'finalizado',
+          winner_id: winnerId
+        }).eq('id', duel.id);
+
+        if (winnerId === currentUserId) {
+          alert(`🏁 JUIZ APITOU: Você cravou ${finalFinishTime} e AMASSOU no Duelo! O XP bônus é seu! 🏆`);
+        } else if (winnerId === opponentId) {
+          alert(`🏁 JUIZ APITOU: Você fez ${finalFinishTime}, mas comeu poeira... Seu rival venceu esse duelo. 🐢`);
+        } else {
+          alert("🏁 JUIZ APITOU: Empate cravado! Os dois cruzaram a linha no mesmo segundo. 🤝");
+        }
+      } else {
+        alert("⏱️ Tempo registrado no Juiz! Agora é só esperar seu oponente finalizar a prova.");
+      }
+    } catch (err) {
+      console.error("Erro fatal do Juiz:", err);
+    }
+  };
+
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -116,6 +202,12 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
         .eq('id', race.id);
 
       if (error) throw error;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && status === 'Concluído' && finishTime) {
+        await resolveDuel(user.id, finishTime, name, formattedDateForDB);
+      }
+
       onUpdate();
       onClose();
     } catch (error) {
@@ -126,17 +218,23 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm(`Deseja realmente excluir a atividade "${race.name}"?`)) return;
+  const executeDelete = async () => {
     setLoading(true);
     try {
+      await Promise.all([
+        supabase.from('activity_comments').delete().eq('race_id', race.id),
+        supabase.from('activity_likes').delete().eq('race_id', race.id),
+        supabase.from('duels').delete().eq('race_id', race.id)
+      ]);
+      
       const { error } = await supabase.from('races').delete().eq('id', race.id);
       if (error) throw error;
+      
       onUpdate();
       onClose();
     } catch (error) {
-      console.error(error);
-      alert('Erro ao excluir.');
+      console.error("Erro ao apagar corrida:", error);
+      alert('Erro ao excluir. Verifique sua conexão e tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -222,14 +320,31 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
              </div>
           )}
 
-          <div className="flex gap-3 mt-4">
-            <button type="button" onClick={handleDelete} disabled={loading} className="flex-1 bg-red-500/10 text-red-500 border border-red-500/20 font-bold uppercase text-xs rounded-xl p-4 flex items-center justify-center gap-2 hover:bg-red-500 hover:text-white transition-all">
-              <Trash2 size={18} /> Apagar
-            </button>
-            <button type="submit" disabled={loading} className="flex-2 bg-race-volt text-black font-black uppercase italic rounded-xl p-4 flex items-center justify-center gap-2 shadow-lg shadow-race-volt/10 hover:bg-opacity-90 transition-opacity">
-              <Save size={20} /> {loading ? '...' : 'Salvar'}
-            </button>
-          </div>
+          {showConfirmDelete ? (
+            <div className="flex flex-col gap-3 mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl animate-in fade-in zoom-in duration-200">
+              <p className="text-center text-xs font-bold text-red-500 uppercase tracking-widest flex items-center justify-center gap-2">
+                <AlertTriangle size={14} /> Deseja excluir esta atividade?
+              </p>
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={() => setShowConfirmDelete(false)} disabled={loading} className="flex-1 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 rounded-xl p-3 text-xs font-bold uppercase transition-colors">
+                  Cancelar
+                </button>
+                <button type="button" onClick={executeDelete} disabled={loading} className="flex-1 bg-red-500 text-white rounded-xl p-3 text-xs font-black uppercase shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 hover:bg-red-600 transition-colors">
+                  {loading ? '...' : 'Sim, Excluir'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3 mt-4">
+              <button type="button" onClick={() => setShowConfirmDelete(true)} disabled={loading} className="flex-1 bg-red-500/10 text-red-500 border border-red-500/20 font-bold uppercase text-xs rounded-xl p-4 flex items-center justify-center gap-2 hover:bg-red-500 hover:text-white transition-all">
+                <Trash2 size={18} /> Apagar
+              </button>
+              <button type="submit" disabled={loading} className="flex-2 bg-race-volt text-black font-black uppercase italic rounded-xl p-4 flex items-center justify-center gap-2 shadow-lg shadow-race-volt/10 hover:bg-opacity-90 transition-opacity">
+                <Save size={20} /> {loading ? '...' : 'Salvar'}
+              </button>
+            </div>
+          )}
+
         </form>
       </div>
     </div>
