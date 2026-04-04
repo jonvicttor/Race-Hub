@@ -39,14 +39,21 @@ const decodePolyline = (str: string) => {
   }
 };
 
+// Componente inteligente para forçar o zoom certinho com respiro (Padding)
 function FitBounds({ coords }: { coords: [number, number][] }) {
   const map = useMap();
+  
   useEffect(() => {
     if (coords.length > 0) {
       const bounds = L.latLngBounds(coords);
-      map.fitBounds(bounds, { padding: [20, 20] });
+      // 👇 Aumentamos o padding aqui para [40, 40] para dar mais folga nas bordas
+      map.fitBounds(bounds, { 
+        padding: [40, 40], 
+        animate: false // Desativa animação para carregar o enquadramento instantaneamente
+      });
     }
   }, [map, coords]);
+  
   return null;
 }
 
@@ -64,14 +71,14 @@ export default function RouteMap({ polyline }: RouteMapProps) {
   return (
     <div className="w-full h-full relative z-0">
       <MapContainer 
-        center={coords[Math.floor(coords.length / 2)]} 
+        center={coords[0]} 
         zoom={13} 
         scrollWheelZoom={false} 
         zoomControl={false}     
         dragging={false}        
         doubleClickZoom={false}
         touchZoom={false}
-        attributionControl={false} // 👈 ESSA LINHA AQUI QUE REMOVE OS NOMES!
+        attributionControl={false}
         className="w-full h-full rounded-xl z-0 bg-[#121212]!" 
       >
         <TileLayer
