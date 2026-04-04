@@ -1,33 +1,54 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
+import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // Função Mágica que Descriptografa a Rota do Strava
 const decodePolyline = (str: string) => {
-  let index = 0, lat = 0, lng = 0;
-  const coordinates = [];
-  while (index < str.length) {
-    let b, shift = 0, result = 0;
-    do {
-      b = str.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += dlat;
-    shift = 0;
-    result = 0;
-    do {
-      b = str.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lng += dlng;
-    coordinates.push([lat / 1e5, lng / 1e5]);
+  if (!str || typeof str !== 'string') return [];
+  
+  try {
+    let index = 0, lat = 0, lng = 0;
+    const coordinates: [number, number][] = [];
+    while (index < str.length) {
+      let b, shift = 0, result = 0;
+      do {
+        b = str.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+      shift = 0;
+      result = 0;
+      do {
+        b = str.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+      coordinates.push([lat / 1e5, lng / 1e5]);
+    }
+    return coordinates;
+  } catch (error) {
+    console.error('Erro silencioso evitado ao decodificar rota:', error);
+    return [];
   }
-  return coordinates;
 };
+
+function FitBounds({ coords }: { coords: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (coords.length > 0) {
+      const bounds = L.latLngBounds(coords);
+      map.fitBounds(bounds, { padding: [20, 20] });
+    }
+  }, [map, coords]);
+  return null;
+}
 
 interface RouteMapProps {
   polyline: string;
@@ -36,38 +57,42 @@ interface RouteMapProps {
 export default function RouteMap({ polyline }: RouteMapProps) {
   const coords = useMemo(() => decodePolyline(polyline), [polyline]);
   
-  if (!coords || coords.length === 0) return null;
-
-  const lats = coords.map(c => c[0]);
-  const lngs = coords.map(c => c[1]);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-
-  const latRange = maxLat - minLat || 0.01;
-  const lngRange = maxLng - minLng || 0.01;
-  
-  const width = 100;
-  const height = (latRange / lngRange) * 100;
-
-  const points = coords.map(([lat, lng]) => {
-    const x = ((lng - minLng) / lngRange) * width;
-    const y = height - ((lat - minLat) / latRange) * height; 
-    return `${x},${y}`;
-  }).join(' ');
+  if (!coords || coords.length === 0) {
+    return <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase tracking-widest font-bold">Sem Rota GPS</div>;
+  }
 
   return (
-    <svg viewBox={`-5 -5 ${width + 10} ${height + 10}`} className="w-full h-full drop-shadow-[0_0_5px_rgba(209,255,0,0.8)] overflow-visible">
-      <polyline 
-        points={points} 
-        fill="none" 
-        stroke="#d1ff00" 
-        strokeWidth="4" 
-        strokeLinecap="round" 
-        strokeLinejoin="round" 
-        vectorEffect="non-scaling-stroke" 
-      />
-    </svg>
+    <div className="w-full h-full relative z-0">
+      <MapContainer 
+        center={coords[Math.floor(coords.length / 2)]} 
+        zoom={13} 
+        scrollWheelZoom={false} 
+        zoomControl={false}     
+        dragging={false}        
+        doubleClickZoom={false}
+        touchZoom={false}
+        attributionControl={false} // 👈 ESSA LINHA AQUI QUE REMOVE OS NOMES!
+        className="w-full h-full rounded-xl z-0 bg-[#121212]!" 
+      >
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        />
+        
+        <Polyline 
+          positions={coords} 
+          pathOptions={{ 
+            color: '#d1ff00', 
+            weight: 4,
+            opacity: 1,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }} 
+        />
+        
+        <FitBounds coords={coords} />
+      </MapContainer>
+
+      <div className="absolute inset-0 z-10 pointer-events-none"></div>
+    </div>
   );
 }

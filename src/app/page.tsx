@@ -1,9 +1,9 @@
 'use client'; 
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown } from 'lucide-react';
 import { supabase } from './lib/supabase';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { AddRaceModal } from './components/AddRaceModal';
@@ -13,8 +13,8 @@ import { ChallengeModal } from './components/ChallengeModal';
 import { Leaderboard } from './components/Leaderboard'; 
 
 const RouteMap = dynamic(() => import('./components/RouteMap'), { 
-  ssr: false, 
-  loading: () => <div className="w-full h-full bg-[#121212] animate-pulse rounded-xl flex items-center justify-center text-race-volt text-xs font-bold uppercase italic border border-white/5">Carregando Mapa...</div>
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-[#121212] animate-pulse rounded-xl" />
 });
 
 interface Race {
@@ -95,7 +95,8 @@ const formatPrice = (priceStr?: string | number | null) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
-export default function Home() {
+// Componente Wrapper para Suspense
+function HomeContent() {
   const [races, setRaces] = useState<Race[]>([]);
   const [feedRaces, setFeedRaces] = useState<Race[]>([]); 
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -116,6 +117,9 @@ export default function Home() {
   const [newCommentText, setNewCommentText] = useState('');
 
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const scrollToId = searchParams.get('scrollTo');
+  const feedRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -216,6 +220,20 @@ export default function Home() {
     }
     initializeHome();
   }, [router, refreshData]);
+
+  // 👇 LÓGICA DE SCROLL AUTOMÁTICO 👇
+  useEffect(() => {
+    if (scrollToId && feedRaces.length > 0) {
+      setTimeout(() => {
+        const element = feedRefs.current[scrollToId];
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Remove a URL antiga para não ficar scrollando pra sempre se ele atualizar a página
+          window.history.replaceState(null, '', '/'); 
+        }
+      }, 500); // Dá um tempinho pro feed renderizar e pro mapa montar antes de rolar
+    }
+  }, [scrollToId, feedRaces]);
 
   const handleToggleVolt = async (raceId: string) => {
     if (!userProfile) return;
@@ -583,7 +601,6 @@ export default function Home() {
           </div>
 
           {feedRaces.length > 0 ? feedRaces.map((activity) => {
-            // 👇 LÓGICA EXATA PARA ACHAR O DUELO DO ATLETA 👇
             const duel = finishedDuels.find(d => 
               d.race?.name?.toLowerCase() === activity.name.toLowerCase() && 
               d.race?.date === activity.date &&
@@ -608,14 +625,11 @@ export default function Home() {
               const diffString = diffSecs >= 60 ? `${Math.floor(diffSecs/60)}m ${diffSecs%60}s` : `${diffSecs}s`;
 
               return (
-                <div key={`duel-${duel.id}`} className="bg-[#121212] border border-yellow-500/30 rounded-3xl p-6 shadow-[0_0_30px_rgba(234,179,8,0.1)] flex flex-col gap-4 relative overflow-hidden">
+                // 👇 ID ADICIONADO AQUI PARA O SCROLL 👇
+                <div id={activity.id} ref={el => {feedRefs.current[activity.id] = el}} key={`duel-${duel.id}`} className={`bg-[#121212] border border-yellow-500/30 rounded-3xl p-6 shadow-[0_0_30px_rgba(234,179,8,0.1)] flex flex-col gap-4 relative overflow-hidden transition-all duration-1000 ${scrollToId === activity.id ? 'ring-4 ring-race-volt animate-pulse' : ''}`}>
                   <div className="absolute -top-10 -right-10 w-32 h-32 bg-yellow-500/20 blur-[50px] rounded-full pointer-events-none"></div>
                   
                   <div className="flex flex-col items-center text-center relative z-10">
-                    <span className="text-yellow-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 mb-4">
-                      <Crown size={14} strokeWidth={3} /> Resultado do Duelo
-                    </span>
-                    
                     <div className="w-16 h-16 rounded-full flex items-center justify-center font-black text-xl uppercase overflow-hidden relative border-2 border-yellow-500 bg-yellow-500/20 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)] mb-2">
                       {winnerProfile?.avatar_url ? <Image src={winnerProfile.avatar_url} alt="Winner" fill className="object-cover"/> : (winnerProfile?.username?.substring(0, 2) || '??')}
                     </div>
@@ -656,7 +670,8 @@ export default function Home() {
             const raceComments = comments[activity.id] || [];
 
             return (
-              <div key={activity.id} className="bg-[#121212] border border-white/5 rounded-3xl p-5 shadow-lg flex flex-col gap-4 relative overflow-hidden">
+              // 👇 ID ADICIONADO AQUI TAMBÉM PARA O SCROLL 👇
+              <div id={activity.id} ref={el => {feedRefs.current[activity.id] = el}} key={activity.id} className={`bg-[#121212] border border-white/5 rounded-3xl p-5 shadow-lg flex flex-col gap-4 relative overflow-hidden transition-all duration-1000 ${scrollToId === activity.id ? 'ring-2 ring-race-volt shadow-[0_0_20px_rgba(204,255,0,0.3)] scale-[1.02]' : ''}`}>
                 <div className="flex items-center justify-between relative z-10">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center font-black uppercase overflow-hidden relative bg-race-volt/20 border border-race-volt/50 text-race-volt">
@@ -831,5 +846,13 @@ export default function Home() {
         <ChallengeModal race={challengingRace} friends={profiles} onClose={() => { setChallengingRace(null); refreshData(); }} />
       )}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center text-race-volt font-black uppercase italic">Carregando...</div>}>
+      <HomeContent />
+    </Suspense>
   );
 }

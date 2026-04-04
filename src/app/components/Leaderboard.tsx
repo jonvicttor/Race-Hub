@@ -4,17 +4,21 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Trophy, Medal, Route } from 'lucide-react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 interface LeaderboardEntry {
   id: string;
   username: string;
-  avatar_url?: string; // 👇 Adicionamos a foto do perfil
+  avatar_url?: string;
   totalKm: number;
 }
 
 export function Leaderboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
+  const router = useRouter();
 
   useEffect(() => {
     let isMounted = true;
@@ -22,6 +26,8 @@ export function Leaderboard() {
     async function fetchLeaderboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      
+      if (isMounted) setCurrentUserId(user.id);
 
       // 1. Pega os amigos aprovados
       const { data: friendships } = await supabase
@@ -37,7 +43,7 @@ export function Leaderboard() {
         userIds = [...userIds, ...friendIds];
       }
 
-      // 2. Busca os perfis da galera do Pelotão (AGORA COM A FOTO)
+      // 2. Busca os perfis da galera do Pelotão
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, username, avatar_url')
@@ -85,6 +91,14 @@ export function Leaderboard() {
     return () => { isMounted = false; };
   }, []);
 
+  const handleProfileClick = (id: string) => {
+    if (id === currentUserId) {
+      router.push('/profile');
+    } else {
+      router.push(`/profile/${id}`);
+    }
+  };
+
   if (loading) {
     return <div className="animate-pulse bg-race-card h-32 rounded-3xl border border-white/5"></div>;
   }
@@ -115,16 +129,19 @@ export function Leaderboard() {
         {leaderboard.slice(0, 3).map((entry, index) => (
           <div 
             key={entry.id} 
-            className={`flex items-center justify-between p-3 rounded-xl border ${
+            onClick={() => handleProfileClick(entry.id)}
+            role="button"
+            tabIndex={0}
+            className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer hover:scale-[1.02] transition-all duration-200 group ${
               index === 0 
-                ? 'bg-linear-to-r from-race-volt/20 to-transparent border-race-volt/30 text-white shadow-lg shadow-race-volt/5' 
-                : 'bg-background/50 border-white/5 text-gray-300'
+                ? 'bg-linear-to-r from-race-volt/20 to-transparent border-race-volt/30 text-white shadow-lg shadow-race-volt/5 hover:border-race-volt/50' 
+                : 'bg-background/50 border-white/5 text-gray-300 hover:border-white/20 hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
               {/* 👇 ÁREA DA FOTO OU MEDALHA 👇 */}
               <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs overflow-hidden relative border-2 ${
-                index === 0 ? 'border-race-volt bg-race-volt text-black' : 'border-white/10 bg-white/10 text-gray-400'
+                index === 0 ? 'border-race-volt bg-race-volt text-black' : 'border-white/10 bg-white/10 text-gray-400 group-hover:border-gray-500 transition-colors'
               }`}>
                 {entry.avatar_url ? (
                   <Image src={entry.avatar_url} alt={entry.username} fill className="object-cover" />
@@ -140,7 +157,7 @@ export function Leaderboard() {
                 )}
               </div>
               
-              <span className={`font-bold uppercase text-sm ${index === 0 ? 'text-race-volt' : ''}`}>
+              <span className={`font-bold uppercase text-sm ${index === 0 ? 'text-race-volt' : 'group-hover:text-white transition-colors'}`}>
                 {entry.username}
               </span>
             </div>

@@ -1,4 +1,4 @@
-'use client';
+'use client'; 
 
 import { useEffect, useState, useMemo, Suspense, useRef } from 'react';
 import { supabase } from '../lib/supabase';
@@ -32,6 +32,8 @@ interface Profile {
   is_owner?: boolean; 
   is_pioneer?: boolean; 
   strava_access_token?: string; 
+  strava_refresh_token?: string; 
+  strava_expires_at?: number; 
   avatar_url?: string; 
 }
 
@@ -261,26 +263,78 @@ function ProfileContent() {
     window.location.href = stravaAuthUrl;
   };
 
+  // 👇 LÓGICA DE PUXAR TREINOS COM RENOVAÇÃO AUTOMÁTICA DE TOKEN 👇
   const syncStravaActivities = async () => {
     if (!profile?.strava_access_token) {
-      alert("⚠️ Chave de acesso não encontrada na memória. Dê um F5 na página e tente novamente!");
+      alert("⚠️ Conexão com Strava não encontrada. Reconecte sua conta.");
       return;
     }
+    
     setIsSyncing(true);
     try {
-      const response = await fetch('https://www.strava.com/api/v3/athlete/activities?per_page=5', {
-        headers: { Authorization: `Bearer ${profile.strava_access_token}` }
+      let currentAccessToken = profile.strava_access_token;
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+
+      // Verifica se o token expirou (com margem de segurança de 1 minuto)
+      if (profile.strava_expires_at && (profile.strava_expires_at - 60) < nowInSeconds) {
+        console.log("Token do Strava expirado! Renovando silenciosamente...");
+        
+        const refreshRes = await fetch('https://www.strava.com/oauth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: 220016, 
+            client_secret: 'ff187c140ae7d513c5e8e297da714062879305ec', 
+            grant_type: 'refresh_token',
+            refresh_token: profile.strava_refresh_token
+          })
+        });
+
+        if (!refreshRes.ok) {
+          setIsStravaConnected(false); // Oculta o botão de sync se a renovação falhar
+          throw new Error('A permissão expirou completamente. Por favor, conecte o Strava novamente.');
+        }
+
+        const refreshData = await refreshRes.json();
+        currentAccessToken = refreshData.access_token;
+
+        // Atualiza no banco
+        await supabase.from('profiles').update({
+          strava_access_token: refreshData.access_token,
+          strava_refresh_token: refreshData.refresh_token,
+          strava_expires_at: refreshData.expires_at
+        }).eq('id', profile.id);
+
+        // Atualiza no estado da tela
+        setProfile(prev => prev ? {
+          ...prev,
+          strava_access_token: refreshData.access_token,
+          strava_refresh_token: refreshData.refresh_token,
+          strava_expires_at: refreshData.expires_at
+        } : null);
+      }
+
+      // Agora faz a busca com o Token Garantidamente Válido
+      const startOfYear = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
+
+      const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?after=${startOfYear}&per_page=200`, {
+        headers: { Authorization: `Bearer ${currentAccessToken}` }
       });
-      if (!response.ok) throw new Error('Token inválido ou expirado');
+      
+      if (!response.ok) throw new Error('Falha ao buscar atividades no Strava.');
 
       const activities = await response.json();
       let newRacesAdded = 0;
 
       for (const act of activities) {
-        if (act.type !== 'Run') continue;
+        if (act.type !== 'Run') continue; 
+
         const dateStr = act.start_date_local.split('T')[0];
         const alreadyExists = completedRaces.some(r => r.date === dateStr && r.name === act.name);
         if (alreadyExists) continue;
+
+        const isRace = act.workout_type === 1;
+        const definedActivityType = isRace ? 'prova' : 'treino';
 
         const distKm = (act.distance / 1000).toFixed(2);
         const timeSec = act.moving_time;
@@ -308,7 +362,7 @@ function ProfileContent() {
           finish_time: timeStr,
           pace: paceStr,
           status: 'Concluído',
-          activity_type: 'treino',
+          activity_type: definedActivityType,
           event_location: 'Strava',
           map_polyline: act.map?.summary_polyline || null 
         });
@@ -317,14 +371,14 @@ function ProfileContent() {
       }
 
       if (newRacesAdded > 0) {
-        alert(`A Pista ferveu! 🔥 ${newRacesAdded} novos treinos importados com sucesso.`);
+        alert(`A Pista ferveu! 🔥 ${newRacesAdded} novas atividades importadas e categorizadas com sucesso.`);
         window.location.reload(); 
       } else {
         alert('Seu diário está em dia! Nenhum treino novo encontrado.');
       }
     } catch (error) {
       console.error(error);
-      alert('Erro ao puxar dados do Strava. Pode ser que o token tenha expirado.');
+      alert(error instanceof Error ? error.message : 'Erro interno ao sincronizar com o Strava.');
     } finally {
       setIsSyncing(false);
     }
@@ -471,7 +525,6 @@ function ProfileContent() {
         const km = parseFloat(race.distance.replace(/[^\d.]/g, '')) || 0;
         match.totalKm += km;
         
-        // 👇 Correção do ESLint (If/Else no lugar de Ternário) 👇
         if (race.activity_type === 'treino') {
           match.treinoKm += km;
         } else {
@@ -513,7 +566,6 @@ function ProfileContent() {
     return { linePath: linePathD, areaPath: areaPathD, pointsCoords: coords };
   }, [chartPoints, maxKm]);
 
-  // 👇 Lógica de Prova Futura 👇
   const today = new Date().toISOString().split('T')[0];
   const upcomingRace = completedRaces
     .filter(r => r.status !== 'Concluído' && r.date >= today)
@@ -538,6 +590,10 @@ function ProfileContent() {
     return () => clearInterval(intervalId); 
   }, [upcomingRace]);
 
+  const handleRaceClick = (raceId: string) => {
+    router.push(`/?scrollTo=${raceId}`);
+  };
+
   const renderList = (items: Race[], title: string) => (
     <div className="animate-in slide-in-from-right-8 fade-in duration-300">
       <div className="flex items-center gap-4 mb-8">
@@ -550,8 +606,14 @@ function ProfileContent() {
       </div>
       <div className="flex flex-col gap-4">
         {items.length > 0 ? items.map((race) => (
-          <div key={race.id} className="bg-race-volt/5 border border-race-volt/20 p-4 rounded-2xl flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div 
+            key={race.id} 
+            onClick={() => handleRaceClick(race.id)}
+            role="button"
+            tabIndex={0}
+            className="bg-race-volt/5 border border-race-volt/20 p-4 rounded-2xl flex items-center justify-between cursor-pointer hover:bg-race-volt/10 transition-colors hover:scale-[1.01] active:scale-[0.99]"
+          >
+            <div className="flex items-center gap-4 pointer-events-none">
               <div className="bg-race-volt/20 p-3 rounded-full text-race-volt shrink-0">
                 {race.activity_type === 'treino' ? <Activity size={24} /> : <Medal size={24} />}
               </div>
@@ -564,8 +626,8 @@ function ProfileContent() {
                 </div>
               </div>
             </div>
-            {race.map_polyline && <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0"><RouteMap polyline={race.map_polyline} /></div>}
-            <div className={`flex flex-col items-end shrink-0 ${!race.map_polyline ? 'ml-auto' : ''}`}>
+            {race.map_polyline && <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0 pointer-events-none"><RouteMap polyline={race.map_polyline} /></div>}
+            <div className={`flex flex-col items-end shrink-0 pointer-events-none ${!race.map_polyline ? 'ml-auto' : ''}`}>
               <span className="font-black italic text-race-volt">{race.finish_time || '--:--'}</span>
               <span className="text-[10px] text-gray-500 font-bold uppercase">{race.pace ? `${race.pace} /km` : ''}</span>
             </div>
@@ -604,11 +666,6 @@ function ProfileContent() {
             <div className="absolute top-10 w-40 h-40 bg-race-volt/10 blur-[80px] rounded-full pointer-events-none"></div>
 
             <div className="relative flex flex-col items-center z-10">
-              
-              {/* Insígnia Flutuante */}
-              <div className="absolute -top-14 w-28 h-28 z-20 pointer-events-none">
-                 <Image src={xpSystem.patentData.insignia} alt="Insignia" fill className="object-contain drop-shadow-[0_0_15px_rgba(204,255,0,0.4)]" />
-              </div>
 
               {/* Botão de Avatar Invisível */}
               <input 
