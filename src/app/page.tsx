@@ -1,7 +1,7 @@
 'use client'; 
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown, Bell } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -68,6 +68,18 @@ interface ActivityComment {
   };
 }
 
+// Interface de Notificações
+interface AppNotification {
+  id: string;
+  created_at: string;
+  user_id: string;
+  actor_id: string;
+  race_id?: string;
+  type: string;
+  read: boolean;
+  actor?: Profile; // Injetado no Front-end
+}
+
 const timeToSeconds = (timeStr: string) => {
   if (!timeStr) return 0; 
   const parts = timeStr.split(':').map(Number);
@@ -116,6 +128,10 @@ function HomeContent() {
   const [activeCommentRaceId, setActiveCommentRaceId] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
 
+  // Estados de Notificações
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const scrollToId = searchParams.get('scrollTo');
@@ -134,16 +150,26 @@ function HomeContent() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const [profilesRes, racesRes, friendshipsRes, duelsRes] = await Promise.all([
+    const [profilesRes, racesRes, friendshipsRes, duelsRes, notifsRes] = await Promise.all([
       supabase.from('profiles').select('*'),
       supabase.from('races').select('*').eq('user_id', user.id).neq('status', 'Concluído').order('date', { ascending: true }),
       supabase.from('friendships').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`),
-      supabase.from('duels').select('*').eq('challenged_id', user.id).eq('status', 'pendente')
+      supabase.from('duels').select('*').eq('challenged_id', user.id).eq('status', 'pendente'),
+      supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20)
     ]);
 
     if (profilesRes.data) {
       const current = profilesRes.data.find(p => p.id === user.id);
       if (current) setUserProfile(current);
+
+      // Tratamento das Notificações (Injetando o ator pelo Frontend pra evitar erros de FK no Supabase)
+      if (notifsRes.data) {
+        const enrichedNotifs = notifsRes.data.map(n => ({
+          ...n,
+          actor: profilesRes.data.find(p => p.id === n.actor_id)
+        }));
+        setNotifications(enrichedNotifs as AppNotification[]);
+      }
 
       if (friendshipsRes.data) {
         const accepted = friendshipsRes.data.filter(f => f.status === 'aceito');
@@ -221,17 +247,15 @@ function HomeContent() {
     initializeHome();
   }, [router, refreshData]);
 
-  // 👇 LÓGICA DE SCROLL AUTOMÁTICO 👇
   useEffect(() => {
     if (scrollToId && feedRaces.length > 0) {
       setTimeout(() => {
         const element = feedRefs.current[scrollToId];
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Remove a URL antiga para não ficar scrollando pra sempre se ele atualizar a página
           window.history.replaceState(null, '', '/'); 
         }
-      }, 500); // Dá um tempinho pro feed renderizar e pro mapa montar antes de rolar
+      }, 500); 
     }
   }, [scrollToId, feedRaces]);
 
@@ -239,6 +263,7 @@ function HomeContent() {
     if (!userProfile) return;
     const raceLikes = likes[raceId] || [];
     const hasLiked = raceLikes.includes(userProfile.id);
+    const targetRace = feedRaces.find(r => r.id === raceId);
 
     if (hasLiked) {
       await supabase.from('activity_likes').delete().eq('race_id', raceId).eq('user_id', userProfile.id);
@@ -246,11 +271,22 @@ function HomeContent() {
     } else {
       await supabase.from('activity_likes').insert({ race_id: raceId, user_id: userProfile.id });
       setLikes(prev => ({ ...prev, [raceId]: [...(prev[raceId] || []), userProfile.id] }));
+
+      // GATILHO DA NOTIFICAÇÃO DE VOLT
+      if (targetRace && targetRace.user_id !== userProfile.id) {
+        await supabase.from('notifications').insert({
+          user_id: targetRace.user_id,
+          actor_id: userProfile.id,
+          race_id: raceId,
+          type: 'volt'
+        });
+      }
     }
   };
 
   const handlePostComment = async (raceId: string) => {
     if (!newCommentText.trim() || !userProfile) return;
+    const targetRace = feedRaces.find(r => r.id === raceId);
 
     const { data, error } = await supabase.from('activity_comments').insert({
       race_id: raceId,
@@ -261,6 +297,30 @@ function HomeContent() {
     if (!error && data) {
       setComments(prev => ({ ...prev, [raceId]: [...(prev[raceId] || []), data as ActivityComment] }));
       setNewCommentText('');
+
+      // GATILHO DA NOTIFICAÇÃO DE COMENTÁRIO
+      if (targetRace && targetRace.user_id !== userProfile.id) {
+        await supabase.from('notifications').insert({
+          user_id: targetRace.user_id,
+          actor_id: userProfile.id,
+          race_id: raceId,
+          type: 'comment'
+        });
+      }
+    }
+  };
+
+  const handleMarkNotifAsRead = async (notifId: string, raceId?: string) => {
+    await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
+    setShowNotifs(false);
+    
+    // Se a notificação for de um treino, rola até ele
+    if (raceId) {
+      const element = feedRefs.current[raceId];
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     }
   };
 
@@ -338,6 +398,8 @@ function HomeContent() {
 
   const listProvas = races.filter(r => r.activity_type !== 'treino');
   const listTreinos = races.filter(r => r.activity_type === 'treino');
+
+  const unreadNotifsCount = notifications.filter(n => !n.read).length;
 
   const renderRaceList = (items: Race[], title: string) => (
     <div className="animate-in slide-in-from-right-8 fade-in duration-300">
@@ -424,8 +486,9 @@ function HomeContent() {
 
   return (
     <main className="min-h-screen bg-background text-foreground p-6 font-sans relative pb-24">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      
+      {/* HEADER & SININHO VIP */}
+      <div className="flex justify-between items-center mb-8 relative">
         <div>
           <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">
             {greeting}, {userProfile?.username || 'ATLETA'}
@@ -434,10 +497,57 @@ function HomeContent() {
             Race <span className="text-race-volt">Hub</span>
           </h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          
+          {/* SININHO DE NOTIFICAÇÕES */}
+          <div className="relative">
+            <button onClick={() => setShowNotifs(!showNotifs)} className="relative p-2 text-gray-400 hover:text-white transition-colors" title="Notificações">
+              <Bell size={22} />
+              {unreadNotifsCount > 0 && (
+                <span className="absolute top-1 right-2 w-2.5 h-2.5 bg-race-volt rounded-full border-2 border-background animate-pulse shadow-[0_0_8px_rgba(209,255,0,0.8)]"></span>
+              )}
+            </button>
+
+            {/* MODAL DE NOTIFICAÇÕES (DROPDOWN) */}
+            {showNotifs && (
+              <div className="absolute top-12 right-0 w-80 bg-race-card border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-200">
+                <div className="p-4 border-b border-white/5 bg-black/20 flex justify-between items-center">
+                  <h3 className="font-bold text-xs uppercase tracking-widest text-gray-400">Notificações</h3>
+                  {unreadNotifsCount > 0 && <span className="text-[9px] bg-race-volt text-black font-black px-2 py-0.5 rounded uppercase">{unreadNotifsCount} novas</span>}
+                </div>
+                <div className="max-h-80 overflow-y-auto custom-scrollbar flex flex-col">
+                  {notifications.length > 0 ? notifications.map(n => (
+                    <button 
+                      key={n.id} 
+                      onClick={() => handleMarkNotifAsRead(n.id, n.race_id)}
+                      className={`text-left p-4 border-b border-white/5 flex gap-3 hover:bg-white/5 transition-colors ${n.read ? 'opacity-50' : 'bg-race-volt/5'}`}
+                    >
+                      <div className="w-8 h-8 shrink-0 rounded-full bg-black border border-white/10 overflow-hidden flex items-center justify-center text-[10px] font-black uppercase text-race-volt">
+                        {n.actor?.avatar_url ? <Image src={n.actor.avatar_url} alt="Avatar" fill className="object-cover"/> : n.actor?.username.substring(0,2) || '??'}
+                      </div>
+                      <div className="flex flex-col flex-1">
+                        <span className="text-[10px] text-gray-500 font-bold mb-1 uppercase tracking-widest">
+                          {n.type === 'volt' ? '⚡ Novo Volt!' : '💬 Novo Comentário'}
+                        </span>
+                        <p className="text-xs text-gray-300 leading-tight">
+                          <strong className="text-white">{n.actor?.username || 'Alguém'}</strong> 
+                          {n.type === 'volt' ? ' deu um Volt na sua atividade.' : ' comentou no seu treino.'}
+                        </p>
+                      </div>
+                      {!n.read && <div className="w-2 h-2 bg-race-volt rounded-full shrink-0 self-center"></div>}
+                    </button>
+                  )) : (
+                    <div className="p-8 text-center text-xs text-gray-500 italic">Nenhuma novidade por enquanto.</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button onClick={handleLogout} className="p-2 text-gray-500 hover:text-red-500 transition-colors" title="Sair do App">
             <LogOut size={20} />
           </button>
+          
           <button onClick={() => router.push('/profile')} className="w-10 h-10 rounded-full border-2 border-race-volt p-0.5 hover:scale-105 active:scale-95 transition-transform" title="Ver Meu Perfil">
             <div className="w-full h-full bg-race-gray rounded-full flex items-center justify-center text-[10px] text-foreground font-bold uppercase overflow-hidden relative">
               {userProfile?.avatar_url ? (
@@ -607,7 +717,6 @@ function HomeContent() {
               (d.challenger_id === activity.user_id || d.challenged_id === activity.user_id)
             );
 
-            // Se for um duelo finalizado, desenha a UI de Batalha (só 1 vez por duelo)
             if (duel) {
               if (renderedDuels.has(duel.id)) return null; 
               renderedDuels.add(duel.id);
@@ -625,13 +734,17 @@ function HomeContent() {
               const diffString = diffSecs >= 60 ? `${Math.floor(diffSecs/60)}m ${diffSecs%60}s` : `${diffSecs}s`;
 
               return (
-                // 👇 ID ADICIONADO AQUI PARA O SCROLL 👇
                 <div id={activity.id} ref={el => {feedRefs.current[activity.id] = el}} key={`duel-${duel.id}`} className={`bg-[#121212] border border-yellow-500/30 rounded-3xl p-6 shadow-[0_0_30px_rgba(234,179,8,0.1)] flex flex-col gap-4 relative overflow-hidden transition-all duration-1000 ${scrollToId === activity.id ? 'ring-4 ring-race-volt animate-pulse' : ''}`}>
                   <div className="absolute -top-10 -right-10 w-32 h-32 bg-yellow-500/20 blur-[50px] rounded-full pointer-events-none"></div>
                   
                   <div className="flex flex-col items-center text-center relative z-10">
-                    <div className="w-16 h-16 rounded-full flex items-center justify-center font-black text-xl uppercase overflow-hidden relative border-2 border-yellow-500 bg-yellow-500/20 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)] mb-2">
-                      {winnerProfile?.avatar_url ? <Image src={winnerProfile.avatar_url} alt="Winner" fill className="object-cover"/> : (winnerProfile?.username?.substring(0, 2) || '??')}
+                    
+                    {/* 👇 ADICIONANDO A COROA DE VOLTA AQUI 👇 */}
+                    <div className="relative mb-2">
+                      <Crown className="absolute -top-4 left-1/2 -translate-x-1/2 text-yellow-500 z-20 h-6 w-6 rotate-[-15deg] drop-shadow-[0_0_10px_rgba(234,179,8,0.5)]" strokeWidth={3}/>
+                      <div className="w-16 h-16 rounded-full flex items-center justify-center font-black text-xl uppercase overflow-hidden relative border-2 border-yellow-500 bg-yellow-500/20 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)] z-10">
+                        {winnerProfile?.avatar_url ? <Image src={winnerProfile.avatar_url} alt="Winner" fill className="object-cover"/> : (winnerProfile?.username?.substring(0, 2) || '??')}
+                      </div>
                     </div>
                     
                     <h3 className="text-xl font-black uppercase italic text-white">{winnerProfile?.username} VENCEU!</h3>
@@ -663,14 +776,12 @@ function HomeContent() {
               );
             }
 
-            // Se a corrida for normal (não for duelo), renderiza o card padrão
             const athlete = profiles.find(p => p.id === activity.user_id) || userProfile;
             const raceLikes = likes[activity.id] || [];
             const hasLiked = userProfile && raceLikes.includes(userProfile.id);
             const raceComments = comments[activity.id] || [];
 
             return (
-              // 👇 ID ADICIONADO AQUI TAMBÉM PARA O SCROLL 👇
               <div id={activity.id} ref={el => {feedRefs.current[activity.id] = el}} key={activity.id} className={`bg-[#121212] border border-white/5 rounded-3xl p-5 shadow-lg flex flex-col gap-4 relative overflow-hidden transition-all duration-1000 ${scrollToId === activity.id ? 'ring-2 ring-race-volt shadow-[0_0_20px_rgba(204,255,0,0.3)] scale-[1.02]' : ''}`}>
                 <div className="flex items-center justify-between relative z-10">
                   <div className="flex items-center gap-3">

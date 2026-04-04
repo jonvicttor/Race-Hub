@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, Suspense, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, BarChart3, Activity, Target, ChevronRight, Trophy, MapPin, Timer, Link2, Calendar, RefreshCw, Camera } from 'lucide-react';
+import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, BarChart3, Activity, Target, ChevronRight, Trophy, MapPin, Timer, Link2, Calendar, RefreshCw, Camera, Zap, Flame, Crown, Moon, Sun } from 'lucide-react';
 import { AddRaceModal } from '../components/AddRaceModal'; 
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
@@ -34,7 +34,7 @@ interface Profile {
   strava_access_token?: string; 
   strava_refresh_token?: string; 
   strava_expires_at?: number; 
-  strava_athlete_id?: string; // 👈 Adicionamos o campo do ID do Atleta aqui
+  strava_athlete_id?: string; 
   avatar_url?: string; 
 }
 
@@ -71,6 +71,15 @@ const decodePolyline = (str: string) => {
     coordinates.push([lat / 1e5, lng / 1e5]);
   }
   return coordinates;
+};
+
+const timeToSeconds = (timeStr?: string) => {
+  if (!timeStr) return Infinity;
+  const cleanStr = timeStr.replace(' /km', '').trim();
+  const parts = cleanStr.split(':').map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return Infinity;
 };
 
 // Mapa Dinâmico
@@ -131,6 +140,14 @@ const formatPrice = (priceStr?: string | number | null) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
+// Função auxiliar para descobrir a semana do ano (ISO)
+const getWeekNumber = (dateString: string) => {
+  const d = new Date(dateString);
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+};
+
 function ProfileContent() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [completedRaces, setCompletedRaces] = useState<Race[]>([]);
@@ -183,14 +200,13 @@ function ProfileContent() {
 
           const data = await response.json();
           if (data.access_token) {
-            // 👇 Captura também o athlete.id retornado pelo Strava 👇
             const athleteId = data.athlete?.id ? String(data.athlete.id) : null;
             
             await supabase.from('profiles').update({
               strava_access_token: data.access_token,
               strava_refresh_token: data.refresh_token,
               strava_expires_at: data.expires_at,
-              ...(athleteId && { strava_athlete_id: athleteId }) // Salva o ID se existir
+              ...(athleteId && { strava_athlete_id: athleteId }) 
             }).eq('id', session.user.id);
             
             setIsStravaConnected(true);
@@ -269,7 +285,6 @@ function ProfileContent() {
     window.location.href = stravaAuthUrl;
   };
 
-  // 👇 LÓGICA DE PUXAR TREINOS COM RENOVAÇÃO AUTOMÁTICA DE TOKEN 👇
   const syncStravaActivities = async () => {
     if (!profile?.strava_access_token) {
       alert("⚠️ Conexão com Strava não encontrada. Reconecte sua conta.");
@@ -281,7 +296,6 @@ function ProfileContent() {
       let currentAccessToken = profile.strava_access_token;
       const nowInSeconds = Math.floor(Date.now() / 1000);
 
-      // Verifica se o token expirou (com margem de segurança de 1 minuto)
       if (profile.strava_expires_at && (profile.strava_expires_at - 60) < nowInSeconds) {
         console.log("Token do Strava expirado! Renovando silenciosamente...");
         
@@ -297,21 +311,19 @@ function ProfileContent() {
         });
 
         if (!refreshRes.ok) {
-          setIsStravaConnected(false); // Oculta o botão de sync se a renovação falhar
+          setIsStravaConnected(false); 
           throw new Error('A permissão expirou completamente. Por favor, conecte o Strava novamente.');
         }
 
         const refreshData = await refreshRes.json();
         currentAccessToken = refreshData.access_token;
 
-        // Atualiza no banco
         await supabase.from('profiles').update({
           strava_access_token: refreshData.access_token,
           strava_refresh_token: refreshData.refresh_token,
           strava_expires_at: refreshData.expires_at
         }).eq('id', profile.id);
 
-        // Atualiza no estado da tela
         setProfile(prev => prev ? {
           ...prev,
           strava_access_token: refreshData.access_token,
@@ -320,7 +332,6 @@ function ProfileContent() {
         } : null);
       }
 
-      // Agora faz a busca com o Token Garantidamente Válido
       const startOfYear = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
 
       const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?after=${startOfYear}&per_page=200`, {
@@ -429,7 +440,6 @@ function ProfileContent() {
     }
   };
 
-  // 👇 Filtragem de Corridas e Variáveis Globais 👇
   const finishedRaces = completedRaces.filter(r => r.status === 'Concluído');
   const listProvas = finishedRaces.filter(r => r.activity_type !== 'treino');
   const listTreinos = finishedRaces.filter(r => r.activity_type === 'treino');
@@ -457,6 +467,79 @@ function ProfileContent() {
 
   const currentGoal = profile?.monthly_goal || 50;
   const progressPercent = Math.min((currentMonthKm / currentGoal) * 100, 100);
+
+  const personalRecords = useMemo<{
+    fastest5k: Race | null;
+    fastest10k: Race | null;
+    longestRun: Race | null;
+    bestPace: Race | null;
+  }>(() => {
+    let fastest5k: Race | null = null;
+    let fastest10k: Race | null = null;
+    let longestRun: Race | null = null;
+    let bestPace: Race | null = null;
+
+    finishedRaces.forEach(race => {
+      const km = parseFloat(race.distance.replace(/[^\d.]/g, '')) || 0;
+      const timeSecs = timeToSeconds(race.finish_time);
+      const paceSecs = timeToSeconds(race.pace);
+
+      if (km >= 4.8 && km <= 5.2) {
+        if (!fastest5k || timeSecs < timeToSeconds(fastest5k.finish_time)) {
+          fastest5k = race;
+        }
+      }
+
+      if (km >= 9.8 && km <= 10.2) {
+        if (!fastest10k || timeSecs < timeToSeconds(fastest10k.finish_time)) {
+          fastest10k = race;
+        }
+      }
+
+      if (!longestRun || km > (parseFloat(longestRun.distance.replace(/[^\d.]/g, '')) || 0)) {
+        longestRun = race;
+      }
+
+      if (paceSecs > 120) {
+        if (!bestPace || paceSecs < timeToSeconds(bestPace.pace)) {
+          bestPace = race;
+        }
+      }
+    });
+
+    return { fastest5k, fastest10k, longestRun, bestPace };
+  }, [finishedRaces]);
+
+  // 👇 ALGORITMO DE BADGES (CONQUISTAS) ATIVADO E CORRIGIDO 👇
+  const earnedBadges = useMemo(() => {
+    const badges = [];
+    
+    const weeksCount: Record<string, number> = {};
+    let isUnshakable = false;
+    let isBat = false;
+    let isEarlyBird = false;
+
+    // Varre todas as corridas salvas no histórico do atleta
+    finishedRaces.forEach(race => {
+      if (race.date) {
+        const weekKey = `${race.date.substring(0, 4)}-W${getWeekNumber(race.date)}`;
+        weeksCount[weekKey] = (weeksCount[weekKey] || 0) + 1;
+        if (weeksCount[weekKey] >= 3) isUnshakable = true;
+      }
+
+      const nameLower = race.name.toLowerCase();
+      // Checa se o nome da corrida que veio do Strava contém termos de horário
+      if (nameLower.includes('noturna') || nameLower.includes('night')) isBat = true;
+      if (nameLower.includes('matinal') || nameLower.includes('morning')) isEarlyBird = true;
+    });
+
+    if (isUnshakable) badges.push({ id: 'inabalavel', name: 'Inabalável', desc: '3 treinos na mesma semana', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20' });
+    if (isBat) badges.push({ id: 'morcego', name: 'Morcego', desc: 'Correu no período noturno', icon: Moon, color: 'text-purple-500', bg: 'bg-purple-500/10', border: 'border-purple-500/20' });
+    if (isEarlyBird) badges.push({ id: 'madrugador', name: 'Madrugador', desc: 'Correu no período matinal', icon: Sun, color: 'text-yellow-400', bg: 'bg-yellow-400/10', border: 'border-yellow-400/20' });
+
+    return badges;
+  }, [finishedRaces]);
+
 
   const xpSystem = useMemo(() => {
     const TREINO_XP_PER_KM = 100;
@@ -667,13 +750,11 @@ function ProfileContent() {
             </div>
           </div>
 
-          {/* ================= HEADER DO PERFIL E AVATAR INTERATIVO ================= */}
           <div className="flex flex-col items-center mb-8 relative">
             <div className="absolute top-10 w-40 h-40 bg-race-volt/10 blur-[80px] rounded-full pointer-events-none"></div>
 
             <div className="relative flex flex-col items-center z-10">
 
-              {/* Botão de Avatar Invisível */}
               <input 
                 type="file" 
                 accept="image/*" 
@@ -683,7 +764,6 @@ function ProfileContent() {
                 disabled={uploadingAvatar} 
               />
 
-              {/* Círculo do Avatar com Upload */}
               <div 
                 onClick={() => fileInputRef.current?.click()}
                 className="w-28 h-28 rounded-full border-4 border-background p-1 mb-2 shadow-2xl shadow-race-volt/10 bg-race-volt/5 relative z-10 flex flex-col items-center justify-center group cursor-pointer overflow-visible transition-transform hover:scale-105"
@@ -695,7 +775,6 @@ function ProfileContent() {
                      <span className="text-4xl font-black italic text-race-volt uppercase">{profile?.username?.substring(0, 2) || '??'}</span>
                   )}
                   
-                  {/* Máscara Hover para trocar foto */}
                   <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20">
                      {uploadingAvatar ? (
                         <RefreshCw size={20} className="text-race-volt animate-spin" />
@@ -708,14 +787,12 @@ function ProfileContent() {
                   </div>
                 </div>
 
-                {/* Badge de Nível Substituindo o texto interno */}
                 <div className="absolute -bottom-3 bg-race-volt text-black border border-black px-3 py-0.5 rounded-full text-[10px] font-black uppercase italic shadow-lg z-30">
                   Nível {xpSystem.currentLevel}
                 </div>
               </div>
             </div>
 
-            {/* Edição de Nome */}
             {isEditing ? (
               <div className="flex flex-col items-center gap-3 mt-6">
                 <input 
@@ -763,7 +840,6 @@ function ProfileContent() {
               </div>
             </div>
             
-            {/* Barra de XP */}
             <div className="w-full max-w-md mt-6 relative z-10">
               <div className="flex justify-between items-end mb-1 px-1">
                 <span className="text-[10px] font-black text-white">{Math.round(xpSystem.tempXp)} XP</span>
@@ -778,7 +854,6 @@ function ProfileContent() {
 
           </div>
 
-          {/* Destaque Próxima Prova */}
           {upcomingRace && (
             <div className="bg-race-volt p-6 rounded-4xl text-black mb-8 relative overflow-hidden shadow-lg shadow-race-volt/10 flex flex-col items-start">
               <div className="relative z-10 w-full">
@@ -872,6 +947,108 @@ function ProfileContent() {
             </div>
           </div>
 
+          {/* ================= RECORDES PESSOAIS (PRs) ================= */}
+          <div className="mb-10 animate-in slide-in-from-bottom-4 fade-in duration-500">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
+                <Crown size={16} className="text-race-volt" /> Recordes Pessoais
+              </h3>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col relative overflow-hidden group hover:border-race-volt/30 transition-colors">
+                <div className="absolute -right-2.5 -top-2.5 opacity-5 text-race-volt group-hover:scale-110 transition-transform"><Zap size={60} /></div>
+                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1 relative z-10">Melhor 5K</span>
+                <div className="relative z-10">
+                  {personalRecords.fastest5k ? (
+                    <>
+                      <span className="text-2xl font-black italic text-white leading-none block mb-1">{personalRecords.fastest5k.finish_time}</span>
+                      <span className="text-[10px] text-gray-400 font-bold uppercase">{personalRecords.fastest5k.pace} /km</span>
+                    </>
+                  ) : (
+                    <span className="text-sm font-bold text-gray-600 italic">--:--</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col relative overflow-hidden group hover:border-race-volt/30 transition-colors">
+                <div className="absolute -right-2.5 -top-2.5 opacity-5 text-race-volt group-hover:scale-110 transition-transform"><Zap size={60} /></div>
+                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1 relative z-10">Melhor 10K</span>
+                <div className="relative z-10">
+                  {personalRecords.fastest10k ? (
+                    <>
+                      <span className="text-2xl font-black italic text-white leading-none block mb-1">{personalRecords.fastest10k.finish_time}</span>
+                      <span className="text-[10px] text-gray-400 font-bold uppercase">{personalRecords.fastest10k.pace} /km</span>
+                    </>
+                  ) : (
+                    <span className="text-sm font-bold text-gray-600 italic">--:--</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col relative overflow-hidden group hover:border-race-volt/30 transition-colors">
+                <div className="absolute -right-2.5 -top-2.5 opacity-5 text-race-volt group-hover:scale-110 transition-transform"><Route size={60} /></div>
+                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1 relative z-10">Maior Longão</span>
+                <div className="relative z-10">
+                  {personalRecords.longestRun ? (
+                    <>
+                      <span className="text-2xl font-black italic text-white leading-none block mb-1">{formatDistance(personalRecords.longestRun.distance)}</span>
+                      <span className="text-[10px] text-gray-400 font-bold uppercase">{personalRecords.longestRun.finish_time}</span>
+                    </>
+                  ) : (
+                    <span className="text-sm font-bold text-gray-600 italic">--:--</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-race-card border border-white/5 rounded-2xl p-4 flex flex-col relative overflow-hidden group hover:border-race-volt/30 transition-colors">
+                <div className="absolute -right-2.5 -top-2.5 opacity-5 text-race-volt group-hover:scale-110 transition-transform"><Flame size={60} /></div>
+                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1 relative z-10">Melhor Pace</span>
+                <div className="relative z-10">
+                  {personalRecords.bestPace ? (
+                    <>
+                      <span className="text-2xl font-black italic text-white leading-none block mb-1">{personalRecords.bestPace.pace} <span className="text-[10px] font-bold text-gray-500 uppercase not-italic">/km</span></span>
+                      <span className="text-[10px] text-gray-400 font-bold uppercase">{formatDistance(personalRecords.bestPace.distance)}</span>
+                    </>
+                  ) : (
+                    <span className="text-sm font-bold text-gray-600 italic">--:--</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ================= GALERIA DE CONQUISTAS (BADGES) REFORMULADA ================= */}
+          {earnedBadges.length > 0 && (
+            <div className="mb-10 animate-in slide-in-from-bottom-4 fade-in duration-500 delay-150">
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
+                  <Medal size={16} className="text-race-volt" /> Conquistas
+                </h3>
+              </div>
+              
+              <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x">
+                {earnedBadges.map(badge => (
+                  <div key={badge.id} className={`snap-center min-w-25 w-25 bg-race-card border ${badge.border} rounded-2xl p-3 flex flex-col items-center text-center gap-2 relative overflow-hidden group shrink-0`}>
+                    
+                    {/* Fundo suave com a cor da badge */}
+                    <div className={`absolute inset-0 ${badge.bg} opacity-10 group-hover:opacity-30 transition-opacity`}></div>
+                    
+                    {/* Ícone menor e mais sutil */}
+                    <div className={`relative z-10 w-10 h-10 rounded-full bg-background border ${badge.border} flex items-center justify-center ${badge.color} group-hover:scale-110 transition-transform shadow-md shadow-black`}>
+                      <badge.icon size={18} strokeWidth={2.5} />
+                    </div>
+                    
+                    <div className="relative z-10 flex flex-col items-center w-full">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${badge.color} leading-none mb-1 w-full truncate`}>{badge.name}</span>
+                      <span className="text-[8px] text-gray-500 font-medium leading-tight line-clamp-2">{badge.desc}</span>
+                    </div>
+                    
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mb-10 bg-race-card border border-white/5 rounded-3xl p-5 pt-8">
             <div className="flex justify-between items-start mb-10">
               <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
@@ -958,7 +1135,6 @@ function ProfileContent() {
         </div>
       )}
 
-      {/* MODAL DE ZOOM DA INSÍGNIA */}
       {selectedInsignia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setSelectedInsignia(null)}>
           <div className="flex flex-col items-center gap-4 bg-race-card border border-white/10 p-8 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] relative max-w-sm w-full" onClick={e => e.stopPropagation()}>
