@@ -1,7 +1,7 @@
 'use client'; 
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown, Bell } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown, Bell, Camera } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -838,7 +838,7 @@ function HomeContent() {
                 </div>
 
                 <div className="flex flex-col gap-3 mt-2 pt-4 border-t border-white/5 relative z-10">
-                  <div className="flex gap-6">
+                  <div className="flex items-center w-full gap-6">
                     <button 
                       onClick={() => handleToggleVolt(activity.id)} 
                       className={`flex items-center gap-2 transition-colors group ${hasLiked ? 'text-race-volt' : 'text-gray-400 hover:text-race-volt'}`}
@@ -852,6 +852,19 @@ function HomeContent() {
                     >
                       <MessageCircle size={18} className="group-hover:scale-110 transition-transform" />
                       <span className="text-xs font-bold">{raceComments.length} Comentários</span>
+                    </button>
+
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const url = `/api/share?name=${encodeURIComponent(activity.name)}&distance=${encodeURIComponent(formatDistance(activity.distance))}&time=${encodeURIComponent(activity.finish_time || '')}&pace=${encodeURIComponent(activity.pace || '')}&polyline=${encodeURIComponent(activity.map_polyline || '')}`;
+                        window.open(url, '_blank');
+                      }}
+                      className="flex items-center gap-2 text-gray-400 hover:text-race-volt transition-colors group ml-auto"
+                      title="Gerar Imagem do Treino para o Instagram"
+                    >
+                      <Camera size={18} className="group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-bold hidden sm:inline">Compartilhar</span>
                     </button>
                   </div>
 
