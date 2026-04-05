@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Medal, Timer, Zap, History } from 'lucide-react';
+import { Medal, Timer, Zap, History, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface FeedItem {
@@ -12,6 +12,8 @@ interface FeedItem {
   finish_time: string;
   pace: string;
   date: string;
+  activity_type?: string; // Adicionado
+  training_plan?: string; // Adicionado
   user: {
     id: string;
     username: string;
@@ -58,7 +60,9 @@ export function SquadFeed() {
           finish_time,
           pace,
           date,
-          user_id
+          user_id,
+          activity_type,
+          training_plan
         `)
         .eq('status', 'Concluído')
         .in('user_id', friendIds)
@@ -127,7 +131,10 @@ export function SquadFeed() {
               </button>
               <div>
                 <p className="text-xs font-bold text-white uppercase leading-none">{item.user.username}</p>
-                <p className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Concluiu uma prova</p>
+                <p className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">
+                  {/* Dinâmico: Prova ou Treino */}
+                  {item.activity_type === 'treino' ? 'Concluiu um treino' : 'Concluiu uma prova'}
+                </p>
               </div>
             </div>
 
@@ -141,7 +148,19 @@ export function SquadFeed() {
                 </span>
               </div>
               
-              <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/5">
+              {/* NOVO BLOCO: PLANILHA DO TREINADOR */}
+              {item.training_plan && (
+                <div className="mb-3 p-2 bg-black/40 rounded-lg border border-white/5">
+                  <p className="text-[9px] font-bold text-gray-500 uppercase mb-1 flex items-center gap-1">
+                    <FileText size={10} /> Planilha
+                  </p>
+                  <p className="text-xs text-gray-400 italic line-clamp-2">
+                    {item.training_plan}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 mt-2 pt-2 border-t border-white/5">
                 <div className="flex items-center gap-1.5 text-gray-300">
                   <Timer size={12} className="text-race-volt" />
                   <span className="text-xs font-black italic">{item.finish_time || '--:--'}</span>

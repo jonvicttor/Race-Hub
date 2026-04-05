@@ -18,7 +18,16 @@ export function AddRaceModal() {
   const [price, setPrice] = useState(''); 
   const [finishTime, setFinishTime] = useState('');
   const [pace, setPace] = useState('');
+  const [trainingPlan, setTrainingPlan] = useState('');
   const [file, setFile] = useState<File | null>(null);
+
+  // Estados do Construtor de Treino
+  const [plannedTime, setPlannedTime] = useState(''); // Novo: Tempo Total
+  const [blockType, setBlockType] = useState('Aquecimento');
+  const [blockValue, setBlockValue] = useState('');
+  const [blockZone, setBlockZone] = useState('');
+  const [blockPace, setBlockPace] = useState('');
+  const [blockReps, setBlockReps] = useState('');
 
   const handleDateChange = (e: ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, ''); 
@@ -58,6 +67,38 @@ export function AddRaceModal() {
     const paceMinutes = Math.floor(paceDecimal);
     const paceSeconds = Math.round((paceDecimal - paceMinutes) * 60);
     setPace(`${String(paceMinutes).padStart(2, '0')}:${String(paceSeconds).padStart(2, '0')}`);
+  };
+
+  const handleAddTrainingBlock = () => {
+    if (!blockValue) {
+      alert('Preencha a Distância, Tempo ou Repetições da etapa!');
+      return;
+    }
+
+    const repsPrefix = blockReps ? `${blockReps}x ` : '';
+    let str = "";
+    
+    if (blockType === 'Intervalado' || blockType === 'Tiro') {
+      str = `${repsPrefix}${blockType}: ${blockValue}`;
+    } else if (blockType === 'Descanso') {
+      str = `Descansar por ${blockValue}`;
+    } else if (blockType === 'Aquecimento') {
+      str = `Aquecer por ${blockValue}`;
+    } else if (blockType === 'Desaquecimento') {
+      str = `Desaquecer por ${blockValue}`;
+    } else if (blockType === 'Rodagem') {
+      str = `Correr por ${blockValue}`;
+    }
+
+    if (blockZone) str += ` - ${blockZone}`;
+    if (blockPace) str += ` - Pace ${blockPace}`;
+
+    setTrainingPlan(prev => prev ? prev + '\n' + str : str);
+    
+    setBlockValue('');
+    setBlockPace('');
+    setBlockZone('');
+    setBlockReps('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,7 +146,8 @@ export function AddRaceModal() {
           finish_time: finalStatus === 'Concluído' ? finishTime : null,
           pace: finalStatus === 'Concluído' ? pace : null,
           certificate_url: certificateUrl,
-          activity_type: activityType
+          activity_type: activityType,
+          training_plan: activityType === 'treino' ? trainingPlan : null
         },
       ]);
 
@@ -124,7 +166,8 @@ export function AddRaceModal() {
   const resetStates = () => {
     setName(''); setDate(''); setDistance(''); setStatus('A Planejar');
     setRegistrationLink(''); setEventLocation(''); setPrice('');
-    setFinishTime(''); setPace(''); setFile(null);
+    setFinishTime(''); setPace(''); setFile(null); setTrainingPlan('');
+    setPlannedTime(''); setBlockType('Aquecimento'); setBlockValue(''); setBlockZone(''); setBlockPace(''); setBlockReps('');
   };
 
   return (
@@ -169,13 +212,119 @@ export function AddRaceModal() {
                   <input type="text" required maxLength={10} value={date} onChange={handleDateChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors" placeholder="DD/MM/AAAA" />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Distância</label>
+                  <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Distância Final</label>
                   <div className="relative">
                     <input type="text" required value={distance} onChange={(e) => setDistance(e.target.value.replace(/[^\d.,]/g, ''))} className="w-full bg-background border border-white/10 rounded-xl p-3 pr-10 text-white focus:border-race-volt outline-none transition-colors" placeholder="Ex: 10" />
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">KM</span>
                   </div>
                 </div>
               </div>
+
+              {activityType === 'treino' && (
+                <>
+                  <div className="bg-black/40 border border-white/10 rounded-2xl p-5 mt-2 animate-in fade-in flex flex-col gap-4">
+                    <label className="text-[10px] font-black uppercase text-race-volt tracking-widest flex items-center gap-2 mb-1">
+                      <Zap size={14} className="text-race-volt" /> Construtor de Etapas
+                    </label>
+
+                    {/* ABA DE TEMPO TOTAL NO CONSTRUTOR */}
+                    <div className="flex flex-col sm:flex-row gap-3 pb-4 border-b border-white/5">
+                      <div className="flex-1">
+                        <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Tempo Total Estimado</label>
+                        <div className="flex gap-2">
+                          <input type="text" value={plannedTime} onChange={(e) => setPlannedTime(e.target.value)} placeholder="Ex: 50 min" className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors placeholder:text-gray-600" />
+                          <button type="button" onClick={() => {
+                            if(plannedTime) {
+                              setTrainingPlan(prev => prev ? `Tempo Total: ${plannedTime}\n\n` + prev : `Tempo Total: ${plannedTime}`);
+                              setPlannedTime('');
+                            }
+                          }} className="bg-white/5 border border-white/10 text-white px-4 rounded-xl hover:bg-race-volt hover:text-black transition-all text-xs font-bold uppercase tracking-widest whitespace-nowrap active:scale-95">Inserir</button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Tipo de Etapa</label>
+                        <select value={blockType} onChange={(e) => setBlockType(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors appearance-none">
+                          <option value="Aquecimento">🔥 Aquecimento</option>
+                          <option value="Rodagem">👟 Rodagem</option>
+                          <option value="Intervalado">⚡ Intervalado</option>
+                          <option value="Tiro">🚀 Tiro</option>
+                          <option value="Descanso">🛑 Descanso</option>
+                          <option value="Desaquecimento">❄️ Desaquecimento</option>
+                        </select>
+                      </div>
+
+                      <div className="flex gap-3">
+                        {(blockType === 'Intervalado' || blockType === 'Tiro') && (
+                          <div className="w-1/3">
+                            <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Séries / Reps</label>
+                            <input type="text" value={blockReps} onChange={(e) => setBlockReps(e.target.value)} placeholder="Ex: 8" className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors" />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Distância / Tempo</label>
+                          <input type="text" value={blockValue} onChange={(e) => setBlockValue(e.target.value)} placeholder="Ex: 5 min, 400m..." className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors placeholder:text-gray-600" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold uppercase text-gray-500 mb-2 block">Zona de Esforço</label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { id: '', label: 'Livre' },
+                          { id: 'Z1', label: 'Z1', activeBg: 'bg-gray-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-gray-400/50' },
+                          { id: 'Z2', label: 'Z2', activeBg: 'bg-blue-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-blue-400/50' },
+                          { id: 'Z3', label: 'Z3', activeBg: 'bg-green-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-green-400/50' },
+                          { id: 'Z4', label: 'Z4', activeBg: 'bg-orange-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-orange-400/50' },
+                          { id: 'Z5', label: 'Z5', activeBg: 'bg-red-500 text-white', inactiveBg: 'bg-background text-gray-500 hover:border-red-500/50' }
+                        ].map(z => (
+                          <button
+                            key={z.id}
+                            type="button"
+                            onClick={() => setBlockZone(z.id)}
+                            className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${
+                              blockZone === z.id 
+                                ? z.id === '' ? 'bg-white text-black border-white shadow-lg' : `${z.activeBg} border-transparent shadow-lg`
+                                : `border-white/10 ${z.inactiveBg}`
+                            }`}
+                          >
+                            {z.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3 items-end border-t border-white/5 pt-4">
+                      <div className="w-full sm:w-1/3">
+                        <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Alvo (Pace)</label>
+                        <input type="text" value={blockPace} onChange={(e) => setBlockPace(e.target.value)} placeholder="Ex: 5:00" className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors placeholder:text-gray-600" />
+                      </div>
+                      <button type="button" onClick={handleAddTrainingBlock} className="w-full sm:w-2/3 bg-white/5 border border-white/10 text-white text-xs font-bold uppercase py-3 rounded-xl hover:bg-race-volt hover:text-black hover:border-race-volt transition-all flex items-center justify-center gap-2 active:scale-95">
+                        <Plus size={16} strokeWidth={3} /> Inserir Etapa
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10px] font-bold uppercase text-gray-500 tracking-widest block">Preview / Edição Manual</label>
+                      {trainingPlan && (
+                        <button type="button" onClick={() => setTrainingPlan('')} className="text-[9px] text-red-500 hover:underline">Limpar</button>
+                      )}
+                    </div>
+                    <textarea 
+                      value={trainingPlan} 
+                      onChange={(e) => setTrainingPlan(e.target.value)} 
+                      rows={5}
+                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors resize-y placeholder:text-gray-600 text-sm font-sans" 
+                      placeholder="As etapas adicionadas acima aparecerão aqui e você pode editá-las livremente..." 
+                    />
+                  </div>
+                </>
+              )}
 
               {(status === 'Concluído' || activityType === 'treino') && (
                 <div className="flex flex-col gap-4 p-4 bg-black/30 border border-white/5 rounded-2xl animate-in fade-in slide-in-from-top-2">
@@ -188,8 +337,8 @@ export function AddRaceModal() {
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
-                        <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Zap size={12} /> Pace</label>
-                        <button type="button" onClick={handleCalculatePace} className="text-[9px] bg-race-volt/20 text-race-volt px-2 py-0.5 rounded flex items-center gap-1 hover:bg-race-volt transition-colors"><Calculator size={10} /> Auto</button>
+                        <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Zap size={12} /> Pace Médio</label>
+                        <button type="button" onClick={handleCalculatePace} className="text-[9px] bg-race-volt/20 text-race-volt px-2 py-0.5 rounded flex items-center gap-1 hover:bg-race-volt hover:text-black transition-colors"><Calculator size={10} /> Auto</button>
                       </div>
                       <input type="text" required value={pace} onChange={handlePaceChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none" placeholder="05:00" />
                     </div>

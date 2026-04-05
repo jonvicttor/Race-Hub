@@ -1,7 +1,7 @@
 'use client'; 
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown, Bell, Camera } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown, Bell, Camera, ClipboardList, RotateCcw, Dumbbell, Target } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -35,6 +35,7 @@ interface Race {
   activity_type?: string;
   map_url?: string;
   map_polyline?: string; 
+  training_plan?: string; 
 }
 
 interface Profile {
@@ -68,7 +69,6 @@ interface ActivityComment {
   };
 }
 
-// Interface de Notificações
 interface AppNotification {
   id: string;
   created_at: string;
@@ -77,7 +77,7 @@ interface AppNotification {
   race_id?: string;
   type: string;
   read: boolean;
-  actor?: Profile; // Injetado no Front-end
+  actor?: Profile; 
 }
 
 const timeToSeconds = (timeStr: string) => {
@@ -107,7 +107,55 @@ const formatPrice = (priceStr?: string | number | null) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
-// Componente Wrapper para Suspense
+// 👇 NOVO FORMATADOR DE PLANILHA DE TREINO (MAIS VISUAL) 👇
+const formatCoachText = (text: string) => {
+  // Divide o texto por quebras de linha e remove linhas vazias
+  const lines = text.split('\n').filter(line => line.trim() !== '');
+
+  return (
+    <div className="flex flex-col gap-2.5 w-full">
+      {lines.map((line, idx) => {
+        // Lógica para escolher o ícone baseado no texto da linha
+        const lowerLine = line.toLowerCase();
+        let Icon = <Target size={14} className="text-race-volt" />; // Ícone padrão
+        
+        if (lowerLine.includes('aquecer') || lowerLine.includes('aquecimento')) {
+          Icon = <span className="text-[12px] leading-none">🔥</span>;
+        } else if (lowerLine.includes('desaquecer') || lowerLine.includes('desaquecimento')) {
+          Icon = <span className="text-[12px] leading-none">❄️</span>;
+        } else if (lowerLine.includes('descansar') || lowerLine.includes('descanso')) {
+          Icon = <span className="text-[12px] leading-none">🛑</span>;
+        } else if (lowerLine.includes('tiro') || lowerLine.includes('intervalado')) {
+          Icon = <span className="text-[12px] leading-none">🚀</span>;
+        } else if (lowerLine.includes('correr') || lowerLine.includes('rodagem')) {
+          Icon = <span className="text-[12px] leading-none">👟</span>;
+        }
+
+        // Formatação das Zonas dentro da linha
+        const formattedLine = line.split(/(Z[1-5])/g).map((part, i) => {
+          if (part === 'Z1') return <span key={i} className="text-gray-300 font-black px-1.5 py-0.5 bg-gray-500/20 border border-gray-500/30 rounded inline-block mx-0.5 shadow-sm text-[10px]">Z1</span>;
+          if (part === 'Z2') return <span key={i} className="text-blue-400 font-black px-1.5 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded inline-block mx-0.5 shadow-sm text-[10px]">Z2</span>;
+          if (part === 'Z3') return <span key={i} className="text-green-400 font-black px-1.5 py-0.5 bg-green-500/20 border border-green-500/30 rounded inline-block mx-0.5 shadow-sm text-[10px]">Z3</span>;
+          if (part === 'Z4') return <span key={i} className="text-orange-400 font-black px-1.5 py-0.5 bg-orange-500/20 border border-orange-500/30 rounded inline-block mx-0.5 shadow-sm text-[10px]">Z4</span>;
+          if (part === 'Z5') return <span key={i} className="text-red-500 font-black px-1.5 py-0.5 bg-red-500/20 border border-red-500/30 rounded inline-block mx-0.5 shadow-sm text-[10px] animate-pulse">Z5</span>;
+          return <span key={i}>{part}</span>;
+        });
+
+        return (
+          <div key={idx} className="flex items-start gap-3 bg-white/5 p-3 rounded-2xl border border-white/5 hover:bg-white/10 transition-colors w-full">
+            <div className="w-6 h-6 rounded-full bg-black/40 flex items-center justify-center shrink-0 border border-white/5 shadow-inner">
+              {Icon}
+            </div>
+            <div className="text-xs text-gray-200 font-medium leading-relaxed pt-0.5 flex-1">
+              {formattedLine}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 function HomeContent() {
   const [races, setRaces] = useState<Race[]>([]);
   const [feedRaces, setFeedRaces] = useState<Race[]>([]); 
@@ -128,9 +176,10 @@ function HomeContent() {
   const [activeCommentRaceId, setActiveCommentRaceId] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
 
-  // Estados de Notificações
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
+
+  const [flippedCardId, setFlippedCardId] = useState<string | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -162,7 +211,6 @@ function HomeContent() {
       const current = profilesRes.data.find(p => p.id === user.id);
       if (current) setUserProfile(current);
 
-      // Tratamento das Notificações (Injetando o ator pelo Frontend pra evitar erros de FK no Supabase)
       if (notifsRes.data) {
         const enrichedNotifs = notifsRes.data.map(n => ({
           ...n,
@@ -272,7 +320,6 @@ function HomeContent() {
       await supabase.from('activity_likes').insert({ race_id: raceId, user_id: userProfile.id });
       setLikes(prev => ({ ...prev, [raceId]: [...(prev[raceId] || []), userProfile.id] }));
 
-      // GATILHO DA NOTIFICAÇÃO DE VOLT
       if (targetRace && targetRace.user_id !== userProfile.id) {
         await supabase.from('notifications').insert({
           user_id: targetRace.user_id,
@@ -298,7 +345,6 @@ function HomeContent() {
       setComments(prev => ({ ...prev, [raceId]: [...(prev[raceId] || []), data as ActivityComment] }));
       setNewCommentText('');
 
-      // GATILHO DA NOTIFICAÇÃO DE COMENTÁRIO
       if (targetRace && targetRace.user_id !== userProfile.id) {
         await supabase.from('notifications').insert({
           user_id: targetRace.user_id,
@@ -315,7 +361,6 @@ function HomeContent() {
     setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
     setShowNotifs(false);
     
-    // Se a notificação for de um treino, rola até ele
     if (raceId) {
       const element = feedRefs.current[raceId];
       if (element) {
@@ -738,8 +783,6 @@ function HomeContent() {
                   <div className="absolute -top-10 -right-10 w-32 h-32 bg-yellow-500/20 blur-[50px] rounded-full pointer-events-none"></div>
                   
                   <div className="flex flex-col items-center text-center relative z-10">
-                    
-                    {/* 👇 ADICIONANDO A COROA DE VOLTA AQUI 👇 */}
                     <div className="relative mb-2">
                       <Crown className="absolute -top-4 left-1/2 -translate-x-1/2 text-yellow-500 z-20 h-6 w-6 rotate-[-15deg] drop-shadow-[0_0_10px_rgba(234,179,8,0.5)]" strokeWidth={3}/>
                       <div className="w-16 h-16 rounded-full flex items-center justify-center font-black text-xl uppercase overflow-hidden relative border-2 border-yellow-500 bg-yellow-500/20 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)] z-10">
@@ -781,122 +824,206 @@ function HomeContent() {
             const hasLiked = userProfile && raceLikes.includes(userProfile.id);
             const raceComments = comments[activity.id] || [];
 
+            // 👇 ESTRUTURA DO FLIP CARD PARA O FEED DE TREINOS 👇
             return (
-              <div id={activity.id} ref={el => {feedRefs.current[activity.id] = el}} key={activity.id} className={`bg-[#121212] border border-white/5 rounded-3xl p-5 shadow-lg flex flex-col gap-4 relative overflow-hidden transition-all duration-1000 ${scrollToId === activity.id ? 'ring-2 ring-race-volt shadow-[0_0_20px_rgba(204,255,0,0.3)] scale-[1.02]' : ''}`}>
-                <div className="flex items-center justify-between relative z-10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center font-black uppercase overflow-hidden relative bg-race-volt/20 border border-race-volt/50 text-race-volt">
-                      {athlete?.avatar_url ? <Image src={athlete.avatar_url} alt="Avatar" fill className="object-cover"/> : (athlete?.username?.substring(0, 2) || '??')}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white leading-none">{athlete?.username || 'Atleta'}</h4>
-                      <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{activity.date.split('-').reverse().join('/')}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="bg-white/5 p-2 rounded-full text-gray-400">
-                      {activity.activity_type === 'treino' ? <Activity size={16} /> : <Trophy size={16} className="text-race-volt" />}
-                    </div>
-                    
-                    {userProfile && userProfile.id === activity.user_id && (
-                      <button 
-                        onClick={() => setEditingRace(activity)} 
-                        className="text-gray-500 hover:text-white transition-colors" 
-                        title="Editar Atividade"
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 relative z-10">
-                  <h3 className="text-lg font-black uppercase italic text-white">{activity.name}</h3>
-                </div>
-
-                {activity.map_polyline ? (
-                  <div className="w-full h-48 sm:h-64 bg-black/40 rounded-xl border border-white/5 overflow-hidden relative z-0 mt-2 mb-2">
-                    <RouteMap polyline={activity.map_polyline} />
-                  </div>
-                ) : (
-                   <div className="w-full h-2 mt-2 mb-2"></div>
-                )}
-
-                <div className="grid grid-cols-3 gap-2 relative z-10">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Distância</span>
-                    <span className="text-base font-black text-white">{formatDistance(activity.distance)}</span>
-                  </div>
-                  <div className="flex flex-col border-l border-white/10 pl-3">
-                    <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Tempo</span>
-                    <span className="text-base font-black text-white">{activity.finish_time || '--:--'}</span>
-                  </div>
-                  <div className="flex flex-col border-l border-white/10 pl-3">
-                    <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Pace</span>
-                    <span className="text-base font-black text-white">{activity.pace ? `${activity.pace}/km` : '--'}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 mt-2 pt-4 border-t border-white/5 relative z-10">
-                  <div className="flex items-center w-full gap-6">
-                    <button 
-                      onClick={() => handleToggleVolt(activity.id)} 
-                      className={`flex items-center gap-2 transition-colors group ${hasLiked ? 'text-race-volt' : 'text-gray-400 hover:text-race-volt'}`}
-                    >
-                      <Zap size={18} className={`${hasLiked ? 'fill-race-volt' : ''} group-hover:scale-110 transition-transform`} />
-                      <span className="text-xs font-bold">{raceLikes.length} Volts</span>
-                    </button>
-                    <button 
-                      onClick={() => setActiveCommentRaceId(activeCommentRaceId === activity.id ? null : activity.id)} 
-                      className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors group"
-                    >
-                      <MessageCircle size={18} className="group-hover:scale-110 transition-transform" />
-                      <span className="text-xs font-bold">{raceComments.length} Comentários</span>
-                    </button>
-
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const url = `/api/share?name=${encodeURIComponent(activity.name)}&distance=${encodeURIComponent(formatDistance(activity.distance))}&time=${encodeURIComponent(activity.finish_time || '')}&pace=${encodeURIComponent(activity.pace || '')}&polyline=${encodeURIComponent(activity.map_polyline || '')}`;
-                        window.open(url, '_blank');
-                      }}
-                      className="flex items-center gap-2 text-gray-400 hover:text-race-volt transition-colors group ml-auto"
-                      title="Gerar Imagem do Treino para o Instagram"
-                    >
-                      <Camera size={18} className="group-hover:scale-110 transition-transform" />
-                      <span className="text-xs font-bold hidden sm:inline">Compartilhar</span>
-                    </button>
-                  </div>
-
-                  {activeCommentRaceId === activity.id && (
-                    <div className="mt-2 flex flex-col gap-3 bg-black/20 p-3 rounded-xl border border-white/5 animate-in fade-in slide-in-from-top-2">
-                      {raceComments.length > 0 ? raceComments.map(c => (
-                        <div key={c.id} className="flex flex-col">
-                          <span className="text-[10px] font-bold text-race-volt uppercase">{c.profiles?.username || 'Atleta'}</span>
-                          <p className="text-xs text-gray-300">{c.text}</p>
+              <div id={activity.id} ref={el => {feedRefs.current[activity.id] = el}} key={activity.id} className="group w-full" style={{ perspective: '1000px' }}>
+                
+                {/* CONTAINER ANIMADO 3D */}
+                <div 
+                  className="relative w-full transition-transform duration-700"
+                  style={{
+                    transformStyle: 'preserve-3d',
+                    transform: flippedCardId === activity.id ? 'rotateY(180deg)' : 'rotateY(0deg)'
+                  }}
+                >
+                  
+                  {/* FRENTE DO CARD (O treino normal) */}
+                  <div 
+                    className={`bg-[#121212] border border-white/5 rounded-3xl p-5 shadow-lg flex flex-col gap-4 relative overflow-hidden ${scrollToId === activity.id ? 'ring-2 ring-race-volt shadow-[0_0_20px_rgba(204,255,0,0.3)] scale-[1.02]' : ''}`}
+                    style={{ 
+                      backfaceVisibility: 'hidden', 
+                      WebkitBackfaceVisibility: 'hidden',
+                      pointerEvents: flippedCardId === activity.id ? 'none' : 'auto', 
+                      zIndex: flippedCardId === activity.id ? 0 : 10 
+                    }}
+                  >
+                    <div className="flex items-center justify-between relative z-10">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-black uppercase overflow-hidden relative bg-race-volt/20 border border-race-volt/50 text-race-volt">
+                          {athlete?.avatar_url ? <Image src={athlete.avatar_url} alt="Avatar" fill className="object-cover"/> : (athlete?.username?.substring(0, 2) || '??')}
                         </div>
-                      )) : (
-                        <p className="text-[10px] text-gray-500 italic">Seja o primeiro a incentivar!</p>
-                      )}
-                      
-                      <div className="flex gap-2 mt-1">
-                        <input 
-                          type="text" 
-                          value={newCommentText}
-                          onChange={e => setNewCommentText(e.target.value)}
-                          placeholder="Deixe um comentário..."
-                          className="flex-1 bg-background border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-race-volt transition-colors"
-                          onKeyDown={e => e.key === 'Enter' && handlePostComment(activity.id)}
-                        />
-                        <button 
-                          onClick={() => handlePostComment(activity.id)} 
-                          className="bg-race-volt text-black px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-transform"
-                        >
-                          Enviar
-                        </button>
+                        <div>
+                          <h4 className="font-bold text-white leading-none">{athlete?.username || 'Atleta'}</h4>
+                          <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{activity.date.split('-').reverse().join('/')}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="bg-white/5 p-2 rounded-full text-gray-400">
+                          {activity.activity_type === 'treino' ? <Activity size={16} /> : <Trophy size={16} className="text-race-volt" />}
+                        </div>
+                        
+                        {userProfile && userProfile.id === activity.user_id && (
+                          <button 
+                            onClick={() => setEditingRace(activity)} 
+                            className="text-gray-500 hover:text-white transition-colors" 
+                            title="Editar Atividade"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                        )}
                       </div>
                     </div>
-                  )}
+
+                    <div className="flex flex-wrap items-center gap-3 relative z-10">
+                      <h3 className="text-lg font-black uppercase italic text-white">{activity.name}</h3>
+                    </div>
+
+                    {activity.map_polyline ? (
+                      <div className="w-full h-48 sm:h-64 bg-black/40 rounded-xl border border-white/5 overflow-hidden relative z-0 mt-2 mb-2">
+                        <RouteMap polyline={activity.map_polyline} />
+                      </div>
+                    ) : (
+                       <div className="w-full h-2 mt-2 mb-2"></div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2 relative z-10">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Distância</span>
+                        <span className="text-base font-black text-white">{formatDistance(activity.distance)}</span>
+                      </div>
+                      <div className="flex flex-col border-l border-white/10 pl-3">
+                        <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Tempo</span>
+                        <span className="text-base font-black text-white">{activity.finish_time || '--:--'}</span>
+                      </div>
+                      <div className="flex flex-col border-l border-white/10 pl-3">
+                        <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Pace</span>
+                        <span className="text-base font-black text-white">{activity.pace ? `${activity.pace}/km` : '--'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 mt-2 pt-4 border-t border-white/5 relative z-10">
+                      <div className="flex items-center w-full gap-5">
+                        <button 
+                          onClick={() => handleToggleVolt(activity.id)} 
+                          className={`flex items-center gap-2 transition-colors group ${hasLiked ? 'text-race-volt' : 'text-gray-400 hover:text-race-volt'}`}
+                        >
+                          <Zap size={18} className={`${hasLiked ? 'fill-race-volt' : ''} group-hover:scale-110 transition-transform`} />
+                          <span className="text-[11px] font-bold">{raceLikes.length} <span className="hidden sm:inline">Volts</span></span>
+                        </button>
+                        <button 
+                          onClick={() => setActiveCommentRaceId(activeCommentRaceId === activity.id ? null : activity.id)} 
+                          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors group"
+                        >
+                          <MessageCircle size={18} className="group-hover:scale-110 transition-transform" />
+                          <span className="text-[11px] font-bold">{raceComments.length} <span className="hidden sm:inline">Comentários</span></span>
+                        </button>
+
+                        <div className="ml-auto flex items-center gap-2">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFlippedCardId(activity.id);
+                            }}
+                            className="flex items-center gap-1.5 text-gray-400 hover:text-race-volt transition-colors group px-2"
+                            title="Ver Planilha do Treinador"
+                          >
+                            <ClipboardList size={18} className="group-hover:scale-110 transition-transform" />
+                            <span className="text-[11px] font-bold uppercase tracking-widest hidden sm:inline">Planilha</span>
+                          </button>
+
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const url = `/api/share?name=${encodeURIComponent(activity.name)}&distance=${encodeURIComponent(formatDistance(activity.distance))}&time=${encodeURIComponent(activity.finish_time || '')}&pace=${encodeURIComponent(activity.pace || '')}&polyline=${encodeURIComponent(activity.map_polyline || '')}`;
+                              window.open(url, '_blank');
+                            }}
+                            className="flex items-center text-gray-400 hover:text-race-volt transition-colors group px-1"
+                            title="Gerar Imagem do Treino para o Instagram"
+                          >
+                            <Camera size={18} className="group-hover:scale-110 transition-transform" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {activeCommentRaceId === activity.id && (
+                        <div className="mt-2 flex flex-col gap-3 bg-black/20 p-3 rounded-xl border border-white/5 animate-in fade-in slide-in-from-top-2">
+                          {raceComments.length > 0 ? raceComments.map(c => (
+                            <div key={c.id} className="flex flex-col">
+                              <span className="text-[10px] font-bold text-race-volt uppercase">{c.profiles?.username || 'Atleta'}</span>
+                              <p className="text-xs text-gray-300">{c.text}</p>
+                            </div>
+                          )) : (
+                            <p className="text-[10px] text-gray-500 italic">Seja o primeiro a incentivar!</p>
+                          )}
+                          
+                          <div className="flex gap-2 mt-1">
+                            <input 
+                              type="text" 
+                              value={newCommentText}
+                              onChange={e => setNewCommentText(e.target.value)}
+                              placeholder="Deixe um comentário..."
+                              className="flex-1 bg-background border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-race-volt transition-colors"
+                              onKeyDown={e => e.key === 'Enter' && handlePostComment(activity.id)}
+                            />
+                            <button 
+                              onClick={() => handlePostComment(activity.id)} 
+                              className="bg-race-volt text-black px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-transform"
+                            >
+                              Enviar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* VERSO DO CARD (A Planilha do Treinador - BLINDADO CONTRA CLIQUE FANTASMA) */}
+                  <div 
+                    className="absolute inset-0 w-full h-full bg-linear-to-br from-[#181818] to-[#0a0a0a] border border-race-volt/30 rounded-3xl p-6 shadow-[0_0_20px_rgba(209,255,0,0.05)] flex flex-col"
+                    style={{
+                      backfaceVisibility: 'hidden',
+                      WebkitBackfaceVisibility: 'hidden',
+                      transform: 'rotateY(180deg)',
+                      pointerEvents: flippedCardId === activity.id ? 'auto' : 'none', 
+                      zIndex: flippedCardId === activity.id ? 10 : 0 
+                    }}
+                  >
+                    <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-race-volt font-black uppercase italic tracking-widest flex items-center gap-2">
+                        <ClipboardList size={20} /> Missão do Treinador
+                      </h3>
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFlippedCardId(null);
+                        }} 
+                        className="text-gray-400 hover:text-white transition-colors bg-white/5 p-2.5 rounded-full hover:bg-white/10 cursor-pointer relative z-50 border border-white/5"
+                        title="Voltar para a Atividade"
+                      >
+                        <RotateCcw size={18} />
+                      </button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2 flex flex-col items-center justify-center">
+                      {activity.training_plan ? (
+                        <div className="w-full h-full flex items-start">
+                          {formatCoachText(activity.training_plan)}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-gray-500 gap-4 opacity-60">
+                          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
+                            <Dumbbell size={32} />
+                          </div>
+                          <div className="text-center">
+                            <p className="font-bold text-sm text-gray-300 uppercase tracking-widest mb-1">Treino Livre</p>
+                            <p className="text-[10px] uppercase tracking-widest">Nenhuma planilha vinculada.</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                 </div>
               </div>
             );

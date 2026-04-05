@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, ChangeEvent } from 'react';
-import { X, Save, Trash2, Timer, Zap, Calculator, Link2, AlertTriangle } from 'lucide-react';
+import { X, Save, Trash2, Timer, Zap, Calculator, Link2, AlertTriangle, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Race {
@@ -17,6 +17,7 @@ interface Race {
   price?: string | number | null; 
   activity_type?: string;
   challenged_by?: string | null;
+  training_plan?: string;
 }
 
 interface EditRaceModalProps {
@@ -49,6 +50,15 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
   const [registrationLink, setRegistrationLink] = useState(race.registration_link || '');
   const [eventLocation, setEventLocation] = useState(race.event_location || '');
   const [price, setPrice] = useState(race.price ? String(race.price).replace('.', ',') : '');
+  const [trainingPlan, setTrainingPlan] = useState(race.training_plan || '');
+
+  // Estados do Construtor de Treino
+  const [plannedTime, setPlannedTime] = useState(''); // Novo: Tempo Total
+  const [blockType, setBlockType] = useState('Aquecimento');
+  const [blockValue, setBlockValue] = useState('');
+  const [blockZone, setBlockZone] = useState('');
+  const [blockPace, setBlockPace] = useState('');
+  const [blockReps, setBlockReps] = useState('');
 
   const handleDateChange = (e: ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, ''); 
@@ -93,7 +103,38 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
     setPace(`${String(paceMinutes).padStart(2, '0')}:${String(paceSeconds).padStart(2, '0')}`);
   };
 
-  // 👇 LÓGICA DO JUIZ CORRIGIDA COM OS NOMES EXATOS DAS COLUNAS 👇
+  const handleAddTrainingBlock = () => {
+    if (!blockValue) {
+      alert('Preencha a Distância, Tempo ou Repetições da etapa!');
+      return;
+    }
+
+    const repsPrefix = blockReps ? `${blockReps}x ` : '';
+    let str = "";
+    
+    if (blockType === 'Intervalado' || blockType === 'Tiro') {
+      str = `${repsPrefix}${blockType}: ${blockValue}`;
+    } else if (blockType === 'Descanso') {
+      str = `Descansar por ${blockValue}`;
+    } else if (blockType === 'Aquecimento') {
+      str = `Aquecer por ${blockValue}`;
+    } else if (blockType === 'Desaquecimento') {
+      str = `Desaquecer por ${blockValue}`;
+    } else if (blockType === 'Rodagem') {
+      str = `Correr por ${blockValue}`;
+    }
+
+    if (blockZone) str += ` - ${blockZone}`;
+    if (blockPace) str += ` - Pace ${blockPace}`;
+
+    setTrainingPlan(prev => prev ? prev + '\n' + str : str);
+    
+    setBlockValue('');
+    setBlockPace('');
+    setBlockZone('');
+    setBlockReps('');
+  };
+
   const resolveDuel = async (currentUserId: string, finalFinishTime: string, raceName: string, raceDate: string) => {
     if (status !== 'Concluído') return;
 
@@ -114,7 +155,6 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
       const isChallenger = duel.challenger_id === currentUserId;
       const opponentId = isChallenger ? duel.challenged_id : duel.challenger_id;
 
-      // 1. Salva o tempo (Nomes das colunas idênticos ao banco)
       const updateField = isChallenger ? { challenger_finish_time: finalFinishTime } : { challenged_finish_time: finalFinishTime };
       const { error: updateError } = await supabase
         .from('duels')
@@ -127,7 +167,6 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
         return;
       }
 
-      // 2. Agora sim, lê o placar atualizado para dar o veredicto
       const { data: updatedDuel } = await supabase
         .from('duels')
         .select('*')
@@ -136,7 +175,6 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
       
       if (!updatedDuel) return;
 
-      // 3. O Veredicto Final (Usando finish_time)
       if (updatedDuel.challenger_finish_time && updatedDuel.challenged_finish_time) {
         const challengerSeconds = timeToSeconds(updatedDuel.challenger_finish_time);
         const challengedSeconds = timeToSeconds(updatedDuel.challenged_finish_time);
@@ -197,7 +235,8 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
           pace: status === 'Concluído' ? pace : null,
           registration_link: registrationLink,
           event_location: eventLocation,
-          price: numericPrice
+          price: numericPrice,
+          training_plan: race.activity_type === 'treino' ? trainingPlan : null
         })
         .eq('id', race.id);
 
@@ -260,7 +299,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
               <input type="text" required maxLength={10} value={date} onChange={handleDateChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors placeholder:text-gray-600" placeholder="DD/MM/AAAA" />
             </div>
             <div>
-              <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Distância</label>
+              <label className="text-xs font-bold uppercase text-gray-500 tracking-widest block mb-1">Distância Final</label>
               <div className="relative">
                 <input type="text" required value={distance} onChange={(e) => setDistance(e.target.value.replace(/[^\d.,]/g, ''))} className="w-full bg-background border border-white/10 rounded-xl p-3 pr-10 text-white focus:border-race-volt outline-none transition-colors" placeholder="Ex: 21" />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs uppercase tracking-widest">KM</span>
@@ -268,16 +307,122 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
             </div>
           </div>
 
+          {race.activity_type === 'treino' && (
+            <>
+              <div className="bg-black/40 border border-white/10 rounded-2xl p-5 mt-2 animate-in fade-in flex flex-col gap-4">
+                <label className="text-[10px] font-black uppercase text-race-volt tracking-widest flex items-center gap-2 mb-1">
+                  <Zap size={14} className="text-race-volt" /> Construtor de Etapas
+                </label>
+
+                {/* ABA DE TEMPO TOTAL NO CONSTRUTOR */}
+                <div className="flex flex-col sm:flex-row gap-3 pb-4 border-b border-white/5">
+                  <div className="flex-1">
+                    <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Tempo Total Estimado</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={plannedTime} onChange={(e) => setPlannedTime(e.target.value)} placeholder="Ex: 50 min" className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors placeholder:text-gray-600" />
+                      <button type="button" onClick={() => {
+                        if(plannedTime) {
+                          setTrainingPlan(prev => prev ? `Tempo Total: ${plannedTime}\n\n` + prev : `Tempo Total: ${plannedTime}`);
+                          setPlannedTime('');
+                        }
+                      }} className="bg-white/5 border border-white/10 text-white px-4 rounded-xl hover:bg-race-volt hover:text-black transition-all text-xs font-bold uppercase tracking-widest whitespace-nowrap active:scale-95">Inserir</button>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Tipo de Etapa</label>
+                    <select value={blockType} onChange={(e) => setBlockType(e.target.value)} className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors appearance-none">
+                      <option value="Aquecimento">🔥 Aquecimento</option>
+                      <option value="Rodagem">👟 Rodagem</option>
+                      <option value="Intervalado">⚡ Intervalado</option>
+                      <option value="Tiro">🚀 Tiro</option>
+                      <option value="Descanso">🛑 Descanso</option>
+                      <option value="Desaquecimento">❄️ Desaquecimento</option>
+                    </select>
+                  </div>
+
+                  <div className="flex gap-3">
+                    {(blockType === 'Intervalado' || blockType === 'Tiro') && (
+                      <div className="w-1/3">
+                        <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Séries / Reps</label>
+                        <input type="text" value={blockReps} onChange={(e) => setBlockReps(e.target.value)} placeholder="Ex: 8" className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Distância / Tempo</label>
+                      <input type="text" value={blockValue} onChange={(e) => setBlockValue(e.target.value)} placeholder="Ex: 5 min, 400m..." className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors placeholder:text-gray-600" />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-bold uppercase text-gray-500 mb-2 block">Zona de Esforço</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: '', label: 'Livre' },
+                      { id: 'Z1', label: 'Z1', activeBg: 'bg-gray-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-gray-400/50' },
+                      { id: 'Z2', label: 'Z2', activeBg: 'bg-blue-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-blue-400/50' },
+                      { id: 'Z3', label: 'Z3', activeBg: 'bg-green-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-green-400/50' },
+                      { id: 'Z4', label: 'Z4', activeBg: 'bg-orange-400 text-black', inactiveBg: 'bg-background text-gray-500 hover:border-orange-400/50' },
+                      { id: 'Z5', label: 'Z5', activeBg: 'bg-red-500 text-white', inactiveBg: 'bg-background text-gray-500 hover:border-red-500/50' }
+                    ].map(z => (
+                      <button
+                        key={z.id}
+                        type="button"
+                        onClick={() => setBlockZone(z.id)}
+                        className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${
+                          blockZone === z.id 
+                            ? z.id === '' ? 'bg-white text-black border-white shadow-lg' : `${z.activeBg} border-transparent shadow-lg`
+                            : `border-white/10 ${z.inactiveBg}`
+                        }`}
+                      >
+                        {z.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 items-end border-t border-white/5 pt-4">
+                  <div className="w-full sm:w-1/3">
+                    <label className="text-[9px] font-bold uppercase text-gray-500 mb-1 block">Alvo (Pace)</label>
+                    <input type="text" value={blockPace} onChange={(e) => setBlockPace(e.target.value)} placeholder="Ex: 5:00" className="w-full bg-background border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-race-volt transition-colors placeholder:text-gray-600" />
+                  </div>
+                  <button type="button" onClick={handleAddTrainingBlock} className="w-full sm:w-2/3 bg-white/5 border border-white/10 text-white text-xs font-bold uppercase py-3 rounded-xl hover:bg-race-volt hover:text-black hover:border-race-volt transition-all flex items-center justify-center gap-2 active:scale-95">
+                    <Plus size={16} strokeWidth={3} /> Inserir Etapa
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold uppercase text-gray-500 tracking-widest block">Preview / Edição Manual</label>
+                  {trainingPlan && (
+                    <button type="button" onClick={() => setTrainingPlan('')} className="text-[9px] text-red-500 hover:underline">Limpar</button>
+                  )}
+                </div>
+                <textarea 
+                  value={trainingPlan} 
+                  onChange={(e) => setTrainingPlan(e.target.value)} 
+                  rows={5}
+                  className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:border-race-volt outline-none transition-colors resize-y placeholder:text-gray-600 text-sm font-sans" 
+                  placeholder="As etapas adicionadas acima aparecerão aqui e você pode editá-las livremente..." 
+                />
+              </div>
+            </>
+          )}
+
           {(status === 'Concluído' || race.activity_type === 'treino') && (
             <div className="flex flex-col gap-4 p-4 bg-black/30 border border-white/5 rounded-2xl animate-in fade-in slide-in-from-top-2">
               <div className="grid grid-cols-2 gap-4 mt-2">
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1"><Timer size={12} /> Tempo</label>
+                  <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1"><Timer size={12} /> Tempo Final</label>
                   <input type="text" value={finishTime} onChange={handleTimeChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt" placeholder="00:55:00" />
                 </div>
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Zap size={12} /> Pace</label>
+                    <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Zap size={12} /> Pace Médio</label>
                     <button type="button" onClick={handleCalculatePace} className="text-[9px] bg-race-volt/20 text-race-volt px-2 py-0.5 rounded flex items-center gap-1 hover:bg-race-volt hover:text-black transition-colors"><Calculator size={10} /> Auto</button>
                   </div>
                   <input type="text" value={pace} onChange={handlePaceChange} className="w-full bg-background border border-white/10 rounded-xl p-3 text-white outline-none focus:border-race-volt" placeholder="05:30" />
@@ -340,7 +485,7 @@ export function EditRaceModal({ race, onClose, onUpdate }: EditRaceModalProps) {
                 <Trash2 size={18} /> Apagar
               </button>
               <button type="submit" disabled={loading} className="flex-2 bg-race-volt text-black font-black uppercase italic rounded-xl p-4 flex items-center justify-center gap-2 shadow-lg shadow-race-volt/10 hover:bg-opacity-90 transition-opacity">
-                <Save size={20} /> {loading ? '...' : 'Salvar'}
+                <Save size={20} /> {loading ? '...' : 'Salvar Alterações'}
               </button>
             </div>
           )}
