@@ -1,7 +1,7 @@
 'use client'; 
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Map, Check, Flame, MessageCircle, Activity, ChevronRight, ChevronLeft, Zap, Crown, Bell, Camera, ClipboardList, RotateCcw, Dumbbell, Target } from 'lucide-react';
+import { Trophy, Calendar, MapPin, Edit3, Clock, LogOut, Timer, Link2, Check, Flame, MessageCircle, Activity, ChevronRight, Zap, Crown, Bell, Camera, ClipboardList, RotateCcw, Dumbbell, Target, Swords } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -107,17 +107,15 @@ const formatPrice = (priceStr?: string | number | null) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
-// 👇 NOVO FORMATADOR DE PLANILHA DE TREINO (MAIS VISUAL) 👇
+// 👇 FORMATADOR DE PLANILHA DE TREINO (VISUAL) 👇
 const formatCoachText = (text: string) => {
-  // Divide o texto por quebras de linha e remove linhas vazias
   const lines = text.split('\n').filter(line => line.trim() !== '');
 
   return (
     <div className="flex flex-col gap-2.5 w-full">
       {lines.map((line, idx) => {
-        // Lógica para escolher o ícone baseado no texto da linha
         const lowerLine = line.toLowerCase();
-        let Icon = <Target size={14} className="text-race-volt" />; // Ícone padrão
+        let Icon = <Target size={14} className="text-race-volt" />; 
         
         if (lowerLine.includes('aquecer') || lowerLine.includes('aquecimento')) {
           Icon = <span className="text-[12px] leading-none">🔥</span>;
@@ -131,7 +129,6 @@ const formatCoachText = (text: string) => {
           Icon = <span className="text-[12px] leading-none">👟</span>;
         }
 
-        // Formatação das Zonas dentro da linha
         const formattedLine = line.split(/(Z[1-5])/g).map((part, i) => {
           if (part === 'Z1') return <span key={i} className="text-gray-300 font-black px-1.5 py-0.5 bg-gray-500/20 border border-gray-500/30 rounded inline-block mx-0.5 shadow-sm text-[10px]">Z1</span>;
           if (part === 'Z2') return <span key={i} className="text-blue-400 font-black px-1.5 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded inline-block mx-0.5 shadow-sm text-[10px]">Z2</span>;
@@ -169,7 +166,6 @@ function HomeContent() {
   const [countdown, setCountdown] = useState<string>('');
   
   const [mainTab, setMainTab] = useState<'feed' | 'calendario'>('feed');
-  const [calViewMode, setCalViewMode] = useState<'menu' | 'provas' | 'treinos'>('menu');
 
   const [likes, setLikes] = useState<Record<string, string[]>>({}); 
   const [comments, setComments] = useState<Record<string, ActivityComment[]>>({}); 
@@ -381,33 +377,6 @@ function HomeContent() {
     refreshData();
   };
 
-  const handleAcceptChallenge = async (challenge: Challenge) => { 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    
-    await supabase.from('duels').update({ status: 'aceito' }).eq('id', challenge.id);
-    
-    const newRace = {
-      user_id: user.id,
-      name: challenge.race.name,
-      date: challenge.race.date,
-      distance: challenge.race.distance,
-      kit_location: challenge.race.kit_location,
-      status: 'A Planejar', 
-      registration_link: challenge.race.registration_link,
-      event_location: challenge.race.event_location,
-      price: challenge.race.price,
-      challenged_by: challenge.challenger.id 
-    };
-    await supabase.from('races').insert([newRace]);
-    refreshData();
-  };
-
-  const handleDeclineChallenge = async (challengeId: string) => {
-    await supabase.from('duels').update({ status: 'recusado' }).eq('id', challengeId);
-    refreshData();
-  };
-
   const today = new Date().toISOString().split('T')[0];
   const upcomingRace = races?.find(race => race.date >= today);
 
@@ -442,91 +411,8 @@ function HomeContent() {
   }, [upcomingRace]);
 
   const listProvas = races.filter(r => r.activity_type !== 'treino');
-  const listTreinos = races.filter(r => r.activity_type === 'treino');
 
   const unreadNotifsCount = notifications.filter(n => !n.read).length;
-
-  const renderRaceList = (items: Race[], title: string) => (
-    <div className="animate-in slide-in-from-right-8 fade-in duration-300">
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => setCalViewMode('menu')} className="p-2 bg-race-card rounded-xl border border-white/5 text-gray-400 hover:text-white">
-          <ChevronLeft size={24} />
-        </button>
-        <h1 className="text-xl font-black uppercase italic tracking-tighter">
-          Próximas <span className="text-race-volt">{title}</span>
-        </h1>
-      </div>
-      <div className="flex flex-col gap-4">
-        {items.length > 0 ? (
-          items.map((race) => (
-            <div key={race.id} className="p-4 rounded-2xl border flex flex-col gap-3 transition-all bg-race-card border-white/5">
-              <div className="flex justify-between items-start">
-                <div className="pr-4">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-lg leading-tight uppercase text-white truncate max-w-37.5 sm:max-w-xs">{race.name}</h4>
-                    {race.challenged_by && (
-                       <span className="text-[10px] text-black bg-race-volt px-1.5 py-0.5 rounded font-bold uppercase italic flex items-center gap-1 shadow-sm shadow-race-volt/30">
-                          <Flame size={10} /> Desafio
-                       </span>
-                    )}
-                  </div>
-                  <p className={`text-xs mt-1 ${race.status === 'Inscrito' ? 'text-race-volt font-bold' : 'text-gray-400'}`}>
-                    {race.status}
-                  </p>
-                </div>
-                
-                {race.map_polyline ? (
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0 rounded overflow-hidden relative z-0 border border-white/10">
-                    <RouteMap polyline={race.map_polyline} />
-                  </div>
-                ) : (
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-0 shrink-0"></div>
-                )}
-
-                <div className={`flex flex-col items-end gap-2 shrink-0 ${!race.map_polyline ? 'ml-auto' : ''}`}>
-                  <span className="text-race-volt font-black italic whitespace-nowrap">{formatDistance(race.distance)}</span>
-                  <div className="flex gap-2 mt-1">
-                    {profiles.length > 0 && (
-                      <button onClick={() => setChallengingRace(race)} className="p-1.5 bg-race-volt/10 text-race-volt rounded-lg hover:bg-race-volt hover:text-black transition-all" title="Desafiar Pelotão">
-                        <Flame size={14} />
-                      </button>
-                    )}
-                    <button onClick={() => setEditingRace(race)} className="p-1.5 bg-white/5 rounded-lg hover:bg-white/20 transition-all">
-                      <Edit3 size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3 mt-2">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-400">
-                  <span className="flex items-center gap-1"><Calendar size={12} /> {race.date.split('-')[2]}/{race.date.split('-')[1]}</span>
-                  {race.event_location && <span className="flex items-center gap-1 text-white"><Map size={12} className="text-race-volt" /> {race.event_location}</span>}
-                  {race.price && <span className="flex items-center gap-1 text-green-400 font-medium">{formatPrice(race.price)}</span>}
-                </div>
-                {(race.kit_location || race.kit_datetime) && (
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-500 bg-white/5 p-2 rounded-lg border border-white/5">
-                    <span className="font-bold uppercase text-[9px] tracking-widest text-gray-400">KIT:</span>
-                    {race.kit_location && <span className="flex items-center gap-1"><MapPin size={10} /> {race.kit_location}</span>}
-                    {race.kit_datetime && <span className="flex items-center gap-1"><Clock size={10} /> {race.kit_datetime}</span>}
-                  </div>
-                )}
-                {race.registration_link && race.status === 'A Planejar' && (
-                  <a href={race.registration_link} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center justify-center gap-2 bg-race-volt/10 text-race-volt border border-race-volt/20 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-race-volt hover:text-black transition-colors">
-                    <Link2 size={12} /> Link de Inscrição
-                  </a>
-                )}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="text-center p-8 border border-dashed border-white/10 rounded-2xl text-gray-500 text-sm italic">
-            Nenhuma atividade agendada.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   const renderedDuels = new Set<string>();
 
   return (
@@ -632,7 +518,7 @@ function HomeContent() {
               <div className="mt-4 flex flex-wrap gap-2">
                 {upcomingRace.event_location && (
                   <div className="inline-flex items-start gap-2 bg-black/10 px-3 py-2.5 rounded-lg text-xs font-bold max-w-full">
-                    <Map size={14} className="shrink-0 mt-0.5" /> 
+                    <MapPin size={14} className="shrink-0 mt-0.5" /> 
                     <span className="leading-snug wrap-break-word">{upcomingRace.event_location}</span>
                   </div>
                 )}
@@ -660,6 +546,31 @@ function HomeContent() {
         )}
       </div>
 
+      {/* 👇 NOVO BOTÃO DA ARENA 👇 */}
+      <button 
+        onClick={() => router.push('/arena')} 
+        className="w-full mb-8 bg-linear-to-r from-red-600 to-black border border-red-500/30 rounded-3xl p-5 flex items-center justify-between transition-all group relative overflow-hidden shadow-lg shadow-red-500/20"
+      >
+        <div className="absolute right-0 top-0 w-24 h-24 bg-red-500/20 blur-2xl rounded-full"></div>
+        <div className="flex items-center gap-4 relative z-10">
+          <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
+            <Swords size={24} />
+          </div>
+          <div className="text-left">
+            <h4 className="text-xl font-black italic text-white leading-none mb-1 uppercase">A Arena</h4>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Duelos e Histórico</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {pendingChallenges.length > 0 && (
+             <span className="bg-red-500 text-white font-black text-[10px] px-2 py-0.5 rounded-full uppercase tracking-widest shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-pulse">
+               {pendingChallenges.length} Desafios
+             </span>
+          )}
+          <ChevronRight size={20} className="text-red-500 relative z-10 group-hover:translate-x-1 transition-transform" />
+        </div>
+      </button>
+
       {/* ===================== 🚨 NOTIFICAÇÕES GLOBAIS VIP (DESAFIOS E AMIGOS) 🚨 ===================== */}
       <div className="flex flex-col gap-3 mb-8">
         
@@ -667,24 +578,19 @@ function HomeContent() {
         {pendingChallenges.length > 0 && (
           <div className="flex flex-col gap-3">
             <h3 className="text-xs font-bold uppercase text-race-volt tracking-widest mb-1 flex items-center gap-2">
-              <Flame size={16} /> Desafios Pendentes
+              <Flame size={16} /> Você foi desafiado!
             </h3>
-            {pendingChallenges.map(c => (
+            {pendingChallenges.slice(0,1).map(c => (
               <div key={c.id} className="bg-linear-to-r from-race-volt/20 to-black border border-race-volt/30 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden shadow-[0_0_15px_rgba(204,255,0,0.1)]">
                 <div className="relative z-10">
                   <p className="text-sm font-bold text-white uppercase leading-tight mb-1">
-                    <span className="text-race-volt">{c.challenger.username}</span> te desafiou!
+                    <span className="text-race-volt">{c.challenger.username}</span> jogou a luva.
                   </p>
-                  <p className="text-xs text-gray-400 font-medium mb-1">Prova: <span className="text-white italic">{c.race.name}</span></p>
-                  {c.duel_type && (
-                    <p className="text-[10px] bg-black/30 inline-block px-2 py-1 rounded border border-white/5 text-gray-300 font-bold tracking-widest uppercase">
-                      MODO: <span className="text-race-volt">{c.duel_type === 'rp' ? 'Superação (RP)' : 'Velocidade'}</span>
-                    </p>
-                  )}
-                  <div className="flex gap-2 mt-4">
-                    <button onClick={() => handleAcceptChallenge(c)} className="flex-1 bg-race-volt text-black text-xs font-black uppercase tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 hover:scale-105 transition-transform"><Check size={14} strokeWidth={3} /> Aceitar</button>
-                    <button onClick={() => handleDeclineChallenge(c.id)} className="px-4 bg-red-500/10 text-red-500 border border-red-500/20 text-xs font-black uppercase tracking-widest rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors">Arregar</button>
-                  </div>
+                  <p className="text-[10px] text-gray-400 font-medium mb-3 uppercase tracking-widest">Resolva isso na Arena.</p>
+                  
+                  <button onClick={() => router.push('/arena')} className="w-full bg-race-volt text-black text-xs font-black uppercase tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-2 hover:scale-105 transition-transform">
+                    <Swords size={16} /> Entrar na Arena
+                  </button>
                 </div>
                 <Flame className="absolute -right-4 -bottom-4 text-race-volt/10" size={100} />
               </div>
@@ -1038,54 +944,81 @@ function HomeContent() {
       {/* ===================== ABA CALENDÁRIO ===================== */}
       {mainTab === 'calendario' && (
         <div className="animate-in fade-in duration-300">
-          
-          {calViewMode === 'provas' && renderRaceList(listProvas, 'Provas')}
-          {calViewMode === 'treinos' && renderRaceList(listTreinos, 'Treinos da Semana')}
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-xl font-black uppercase italic tracking-tighter">
+              Próximas <span className="text-race-volt">Provas</span>
+            </h1>
+            <AddRaceModal /> 
+          </div>
+          <div className="flex flex-col gap-4">
+            {listProvas.length > 0 ? (
+              listProvas.map((race) => (
+                <div key={race.id} className="p-4 rounded-2xl border flex flex-col gap-3 transition-all bg-race-card border-white/5">
+                  <div className="flex justify-between items-start">
+                    <div className="pr-4">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-lg leading-tight uppercase text-white truncate max-w-37.5 sm:max-w-xs">{race.name}</h4>
+                        {race.challenged_by && (
+                           <span className="text-[10px] text-black bg-race-volt px-1.5 py-0.5 rounded font-bold uppercase italic flex items-center gap-1 shadow-sm shadow-race-volt/30">
+                              <Flame size={10} /> Desafio
+                           </span>
+                        )}
+                      </div>
+                      <p className={`text-xs mt-1 ${race.status === 'Inscrito' ? 'text-race-volt font-bold' : 'text-gray-400'}`}>
+                        {race.status}
+                      </p>
+                    </div>
+                    
+                    {race.map_polyline ? (
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-80 shrink-0 rounded overflow-hidden relative z-0 border border-white/10">
+                        <RouteMap polyline={race.map_polyline} />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 ml-auto mr-2 sm:mr-4 opacity-0 shrink-0"></div>
+                    )}
 
-          {calViewMode === 'menu' && (
-            <div className="animate-in fade-in duration-300">
-              
-              <div className="flex justify-between items-center mb-4 mt-2">
-                <h3 className="text-[10px] font-bold uppercase text-gray-500 tracking-widest flex items-center gap-1.5">
-                  <Calendar size={12} className="text-race-volt" /> Agenda
-                </h3>
-                <AddRaceModal /> 
+                    <div className={`flex flex-col items-end gap-2 shrink-0 ${!race.map_polyline ? 'ml-auto' : ''}`}>
+                      <span className="text-race-volt font-black italic whitespace-nowrap">{formatDistance(race.distance)}</span>
+                      <div className="flex gap-2 mt-1">
+                        {/* BOTÃO DE DESAFIAR DE VOLTA! 🔥 */}
+                        {profiles.length > 0 && (
+                          <button onClick={() => setChallengingRace(race)} className="p-1.5 bg-race-volt/10 text-race-volt rounded-lg hover:bg-race-volt hover:text-black transition-all" title="Desafiar Pelotão">
+                            <Flame size={14} />
+                          </button>
+                        )}
+                        <button onClick={() => setEditingRace(race)} className="p-1.5 bg-white/5 rounded-lg hover:bg-white/20 transition-all">
+                          <Edit3 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-3 mt-2">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-400">
+                      <span className="flex items-center gap-1"><Calendar size={12} /> {race.date.split('-')[2]}/{race.date.split('-')[1]}</span>
+                      {race.event_location && <span className="flex items-center gap-1 text-white"><MapPin size={12} className="text-race-volt" /> {race.event_location}</span>}
+                      {race.price && <span className="flex items-center gap-1 text-green-400 font-medium">{formatPrice(race.price)}</span>}
+                    </div>
+                    {(race.kit_location || race.kit_datetime) && (
+                      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-500 bg-white/5 p-2 rounded-lg border border-white/5">
+                        <span className="font-bold uppercase text-[9px] tracking-widest text-gray-400">KIT:</span>
+                        {race.kit_location && <span className="flex items-center gap-1"><MapPin size={10} /> {race.kit_location}</span>}
+                        {race.kit_datetime && <span className="flex items-center gap-1"><Clock size={10} /> {race.kit_datetime}</span>}
+                      </div>
+                    )}
+                    {race.registration_link && race.status === 'A Planejar' && (
+                      <a href={race.registration_link} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center justify-center gap-2 bg-race-volt/10 text-race-volt border border-race-volt/20 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-race-volt hover:text-black transition-colors">
+                        <Link2 size={12} /> Link de Inscrição
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center p-8 border border-dashed border-white/10 rounded-2xl text-gray-500 text-sm italic">
+                Nenhuma prova agendada. A pista te espera!
               </div>
-
-              <div className="grid grid-cols-2 gap-4 mb-10">
-                <button onClick={() => setCalViewMode('provas')} className="bg-linear-to-br from-race-card to-background border border-white/5 hover:border-race-volt/50 rounded-3xl p-5 flex flex-col items-start gap-4 transition-all group relative overflow-hidden">
-                  <div className="absolute right-0 top-0 w-20 h-20 bg-race-volt/5 blur-2xl rounded-full"></div>
-                  <div className="w-10 h-10 rounded-full bg-race-volt/10 flex items-center justify-center text-race-volt group-hover:scale-110 transition-transform relative z-10">
-                    <Trophy size={20} />
-                  </div>
-                  <div className="text-left w-full relative z-10 leading-none">
-                    <h4 className="text-2xl font-black italic text-white mb-1">{listProvas.length}</h4>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Provas Oficiais</p>
-                  </div>
-                  <div className="w-full flex items-center justify-between mt-2 pt-4 border-t border-white/5 relative z-10">
-                    <span className="text-[9px] text-gray-400 uppercase tracking-widest truncate max-w-[80%]">{listProvas.length > 0 ? listProvas[0].name : 'Nenhuma'}</span>
-                    <ChevronRight size={12} className="text-race-volt" />
-                  </div>
-                </button>
-
-                <button onClick={() => setCalViewMode('treinos')} className="bg-linear-to-br from-race-card to-background border border-white/5 hover:border-race-volt/50 rounded-3xl p-5 flex flex-col items-start gap-4 transition-all group relative overflow-hidden">
-                  <div className="absolute right-0 top-0 w-20 h-20 bg-race-volt/5 blur-2xl rounded-full"></div>
-                  <div className="w-10 h-10 rounded-full bg-race-volt/10 flex items-center justify-center text-race-volt group-hover:scale-110 transition-transform relative z-10">
-                    <Activity size={20} />
-                  </div>
-                  <div className="text-left w-full relative z-10 leading-none">
-                    <h4 className="text-2xl font-black italic text-white mb-1">{listTreinos.length}</h4>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Treinos da Semana</p>
-                  </div>
-                  <div className="w-full flex items-center justify-between mt-2 pt-4 border-t border-white/5 relative z-10">
-                    <span className="text-[9px] text-gray-400 uppercase tracking-widest">{listTreinos.length > 0 ? formatDistance(listTreinos[0].distance) : 'Nenhum'}</span>
-                    <ChevronRight size={12} className="text-race-volt" />
-                  </div>
-                </button>
-              </div>
-
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
@@ -1093,6 +1026,7 @@ function HomeContent() {
         <EditRaceModal race={editingRace} onClose={() => setEditingRace(null)} onUpdate={refreshData} />
       )}
 
+      {/* MODAL DE DESAFIOS DE VOLTA! 🔥 */}
       {challengingRace && (
         <ChallengeModal race={challengingRace} friends={profiles} onClose={() => { setChallengingRace(null); refreshData(); }} />
       )}
