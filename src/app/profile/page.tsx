@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, Suspense, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, BarChart3, Activity, Target, ChevronRight, Trophy, MapPin, Timer, Link2, Calendar, RefreshCw, Camera, Zap, Flame, Crown, Moon, Sun } from 'lucide-react';
+import { ChevronLeft, Medal, TrendingUp, Route, Edit2, Check, X, BarChart3, Activity, Target, ChevronRight, Trophy, MapPin, Timer, Link2, Calendar, RefreshCw, Camera, Zap, Flame, Crown } from 'lucide-react';
 import { AddRaceModal } from '../components/AddRaceModal'; 
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
@@ -510,36 +510,55 @@ function ProfileContent() {
     return { fastest5k, fastest10k, longestRun, bestPace };
   }, [finishedRaces]);
 
-  // 👇 ALGORITMO DE BADGES (CONQUISTAS) ATIVADO E CORRIGIDO 👇
-  const earnedBadges = useMemo(() => {
-    const badges = [];
-    
+  // 👇 ALGORITMO DE BADGES COM FILTRO DE DESBLOQUEADAS 👇
+  const allBadges = useMemo(() => {
     const weeksCount: Record<string, number> = {};
+    const monthsCount: Record<string, number> = {};
+
     let isUnshakable = false;
     let isBat = false;
     let isEarlyBird = false;
+    let isHalfMarathon = false;
+    let isLightning = false;
+    let isCenturion = false;
+    let isResilient = false;
 
-    // Varre todas as corridas salvas no histórico do atleta
     finishedRaces.forEach(race => {
+      const km = parseFloat(race.distance.replace(/[^\d.]/g, '')) || 0;
+      const paceSecs = timeToSeconds(race.pace);
+
+      if (km >= 21) isHalfMarathon = true;
+      if (paceSecs > 0 && paceSecs <= 270) isLightning = true;
+      if (km >= 10 && paceSecs >= 420) isResilient = true;
+
       if (race.date) {
+        const monthKey = race.date.substring(0, 7); 
+        monthsCount[monthKey] = (monthsCount[monthKey] || 0) + km;
+        if (monthsCount[monthKey] >= 100) isCenturion = true;
+
         const weekKey = `${race.date.substring(0, 4)}-W${getWeekNumber(race.date)}`;
         weeksCount[weekKey] = (weeksCount[weekKey] || 0) + 1;
         if (weeksCount[weekKey] >= 3) isUnshakable = true;
       }
 
       const nameLower = race.name.toLowerCase();
-      // Checa se o nome da corrida que veio do Strava contém termos de horário
       if (nameLower.includes('noturna') || nameLower.includes('night')) isBat = true;
       if (nameLower.includes('matinal') || nameLower.includes('morning')) isEarlyBird = true;
     });
 
-    if (isUnshakable) badges.push({ id: 'inabalavel', name: 'Inabalável', desc: '3 treinos na mesma semana', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20' });
-    if (isBat) badges.push({ id: 'morcego', name: 'Morcego', desc: 'Correu no período noturno', icon: Moon, color: 'text-purple-500', bg: 'bg-purple-500/10', border: 'border-purple-500/20' });
-    if (isEarlyBird) badges.push({ id: 'madrugador', name: 'Madrugador', desc: 'Correu no período matinal', icon: Sun, color: 'text-yellow-400', bg: 'bg-yellow-400/10', border: 'border-yellow-400/20' });
-
-    return badges;
+    return [
+      { id: 'inabalavel', name: 'Inabalável', desc: '3 treinos na mesma semana', imagePath: '/badges/fire.png', earned: isUnshakable, color: 'text-orange-500', bg: 'bg-orange-500/20', border: 'border-orange-500/30' },
+      { id: 'morcego', name: 'Morcego', desc: 'Correu no período noturno', imagePath: '/badges/bat.png', earned: isBat, color: 'text-purple-400', bg: 'bg-purple-500/20', border: 'border-purple-500/30' },
+      { id: 'madrugador', name: 'Madrugador', desc: 'Correu no período matinal', imagePath: '/badges/cool.png', earned: isEarlyBird, color: 'text-yellow-400', bg: 'bg-yellow-400/20', border: 'border-yellow-400/30' },
+      { id: 'meia', name: 'Meia Maratona', desc: 'Sobreviveu aos 21km', imagePath: '/badges/silver-medal.png', earned: isHalfMarathon, color: 'text-gray-300', bg: 'bg-gray-400/20', border: 'border-gray-400/30' },
+      { id: 'relampago', name: 'Relâmpago', desc: 'Pace médio abaixo de 4:30/km', imagePath: '/badges/flash.png', earned: isLightning, color: 'text-cyan-400', bg: 'bg-cyan-400/20', border: 'border-cyan-400/30' },
+      { id: 'centuriao', name: 'Centurião', desc: '+100km rodados no mês', imagePath: '/badges/king.png', earned: isCenturion, color: 'text-amber-400', bg: 'bg-amber-400/20', border: 'border-amber-400/30' },
+      { id: 'resiliencia', name: 'Resiliência', desc: 'Longo (+10k) sem ligar pro pace', imagePath: '/badges/defence.png', earned: isResilient, color: 'text-pink-500', bg: 'bg-pink-500/20', border: 'border-pink-500/30' },
+    ];
   }, [finishedRaces]);
 
+  // Filtra apenas as medalhas que o atleta conquistou
+  const earnedBadgesToDisplay = allBadges.filter(badge => badge.earned);
 
   const xpSystem = useMemo(() => {
     const TREINO_XP_PER_KM = 100;
@@ -1017,30 +1036,37 @@ function ProfileContent() {
             </div>
           </div>
 
-          {/* ================= GALERIA DE CONQUISTAS (BADGES) REFORMULADA ================= */}
-          {earnedBadges.length > 0 && (
+          {/* ================= GALERIA DE CONQUISTAS DESBLOQUEADAS ================= */}
+          {earnedBadgesToDisplay.length > 0 && (
             <div className="mb-10 animate-in slide-in-from-bottom-4 fade-in duration-500 delay-150">
               <div className="flex justify-between items-start mb-4">
                 <h3 className="text-xs font-bold uppercase text-gray-500 tracking-widest flex items-center gap-2">
-                  <Medal size={16} className="text-race-volt" /> Conquistas
+                  <Medal size={16} className="text-race-volt" /> Conquistas Desbloqueadas
                 </h3>
               </div>
               
               <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x">
-                {earnedBadges.map(badge => (
-                  <div key={badge.id} className={`snap-center min-w-25 w-25 bg-race-card border ${badge.border} rounded-2xl p-3 flex flex-col items-center text-center gap-2 relative overflow-hidden group shrink-0`}>
+                {earnedBadgesToDisplay.map(badge => (
+                  <div 
+                    key={badge.id} 
+                    className={`snap-center min-w-28 w-28 bg-race-card border ${badge.border} rounded-2xl p-3 flex flex-col items-center text-center gap-2 relative overflow-hidden group shrink-0 shadow-lg`}
+                  >
                     
-                    {/* Fundo suave com a cor da badge */}
                     <div className={`absolute inset-0 ${badge.bg} opacity-10 group-hover:opacity-30 transition-opacity`}></div>
                     
-                    {/* Ícone menor e mais sutil */}
-                    <div className={`relative z-10 w-10 h-10 rounded-full bg-background border ${badge.border} flex items-center justify-center ${badge.color} group-hover:scale-110 transition-transform shadow-md shadow-black`}>
-                      <badge.icon size={18} strokeWidth={2.5} />
+                    <div className={`relative z-10 w-12 h-12 flex items-center justify-center group-hover:scale-110 transition-transform drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]`}>
+                      <Image 
+                        src={badge.imagePath} 
+                        alt={badge.name} 
+                        width={48} 
+                        height={48} 
+                        className="object-contain"
+                      />
                     </div>
                     
-                    <div className="relative z-10 flex flex-col items-center w-full">
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${badge.color} leading-none mb-1 w-full truncate`}>{badge.name}</span>
-                      <span className="text-[8px] text-gray-500 font-medium leading-tight line-clamp-2">{badge.desc}</span>
+                    <div className="relative z-10 flex flex-col items-center w-full mt-1">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${badge.color} leading-tight mb-1 w-full`}>{badge.name}</span>
+                      <span className="text-[7px] text-gray-500 font-medium leading-tight">{badge.desc}</span>
                     </div>
                     
                   </div>
