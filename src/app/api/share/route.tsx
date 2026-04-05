@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 
 export const runtime = 'edge';
 
+// Decodificador de Polyline (O mesmo do Frontend, rodando no Backend)
 const decodePolyline = (str: string) => {
   let index = 0, lat = 0, lng = 0;
   const coordinates = [];
@@ -32,7 +33,7 @@ const decodePolyline = (str: string) => {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const name = searchParams.get('name') || 'Treino Concluído';
+    // Removemos o parâmetro 'name' pois não vamos mais usar o título
     const distance = searchParams.get('distance') || '0 KM';
     const time = searchParams.get('time') || '--:--:--';
     const pace = searchParams.get('pace') || '--/km';
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
 
     let points = '';
     
+    // Calcula o SVG do mapa se houver rota
     if (polyline) {
       const coords = decodePolyline(polyline);
       if (coords.length > 0) {
@@ -64,31 +66,23 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Retorna a Imagem PNG gerada pelo Satori + Resvg no lado do Servidor
     return new ImageResponse(
       (
         <div style={{
-          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          display: 'flex', flexDirection: 'column', 
+          justifyContent: 'center', // 👈 Centraliza verticalmente o conteúdo que sobrou
+          alignItems: 'center',
           width: '100%', height: '100%', 
-          backgroundColor: 'transparent', // 👈 Fundo Transparente!
+          backgroundColor: 'transparent', // 👈 Fundo Transparente para Story
           color: '#ffffff',
           padding: '80px', fontFamily: 'sans-serif'
         }}>
-           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff', letterSpacing: '4px', textTransform: 'uppercase', textShadow: '0px 4px 20px rgba(0,0,0,0.9)' }}>
-                  COMPARTILHAMENTO
-                </span>
-                <h1 style={{ fontSize: '64px', fontWeight: '900', fontStyle: 'italic', margin: 0, textTransform: 'uppercase', letterSpacing: '-2px', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>
-                  RACE <span style={{ color: '#d1ff00' }}>HUB</span>
-                </h1>
-              </div>
-           </div>
+           
+           {/* 👇 SESSÕES DE LOGO E TÍTULO FORAM REMOVIDAS DAQUI 👇 */}
 
-           <div style={{ display: 'flex', fontSize: '72px', fontWeight: '900', fontStyle: 'italic', textTransform: 'uppercase', marginTop: '20px', lineHeight: '1.1', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>
-              {name}
-           </div>
-
-           <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', margin: '40px 0' }}>
+           {/* Área do Mapa Dinâmico (Expandida) */}
+           <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: '60px' }}>
               {polyline && points ? (
                 <svg viewBox="-20 -20 840 540" width="100%" height="100%" style={{ display: 'flex', filter: 'drop-shadow(0 0 25px rgba(0,0,0,0.8)) drop-shadow(0 0 10px rgba(209,255,0,0.8))' }}>
                   <polyline points={points} fill="none" stroke="#d1ff00" strokeWidth="16" strokeLinecap="round" strokeLinejoin="round" />
@@ -100,25 +94,31 @@ export async function GET(req: NextRequest) {
               )}
            </div>
 
-           <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '50px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+           {/* Status do Treino (Métricas) - Agora Centralizadas e Minimalistas */}
+           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '60px', width: '100%' }}>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <span style={{ fontSize: '28px', color: '#fff', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold', marginBottom: '10px', textShadow: '0px 4px 20px rgba(0,0,0,0.9)' }}>Distância</span>
-                <span style={{ fontSize: '72px', fontWeight: '900', color: '#d1ff00', fontStyle: 'italic', lineHeight: '1', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>{distance}</span>
+                {/* Destacamos a distância em Volt (Neon) */}
+                <span style={{ fontSize: '80px', fontWeight: '900', color: '#d1ff00', fontStyle: 'italic', lineHeight: '1', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>{distance}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', borderLeft: '2px solid rgba(255,255,255,0.2)', paddingLeft: '60px' }}>
                 <span style={{ fontSize: '28px', color: '#fff', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold', marginBottom: '10px', textShadow: '0px 4px 20px rgba(0,0,0,0.9)' }}>Tempo</span>
-                <span style={{ fontSize: '72px', fontWeight: '900', color: '#fff', fontStyle: 'italic', lineHeight: '1', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>{time}</span>
+                <span style={{ fontSize: '80px', fontWeight: '900', color: '#fff', fontStyle: 'italic', lineHeight: '1', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>{time}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', borderLeft: '2px solid rgba(255,255,255,0.2)', paddingLeft: '60px' }}>
                 <span style={{ fontSize: '28px', color: '#fff', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold', marginBottom: '10px', textShadow: '0px 4px 20px rgba(0,0,0,0.9)' }}>Pace</span>
-                <span style={{ fontSize: '72px', fontWeight: '900', color: '#fff', fontStyle: 'italic', lineHeight: '1', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>{pace}</span>
+                <span style={{ fontSize: '80px', fontWeight: '900', color: '#fff', fontStyle: 'italic', lineHeight: '1', textShadow: '0px 4px 30px rgba(0,0,0,0.9)' }}>{pace}</span>
               </div>
+           
            </div>
         </div>
       ),
       {
         width: 1080,
-        height: 1080,
+        height: 1080, // Quadrado perfeito para o Instagram
       }
     );
   } catch (error) {
