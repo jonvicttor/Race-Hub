@@ -6,6 +6,7 @@
 ---
 
 O **Race Hub** é uma plataforma desenvolvida para corredores que buscam gamificar seus treinos e provas oficiais. Com um sistema de progressão inspirado em RPGs, o app calcula seu XP com base na performance, define patentes exclusivas e permite desafios entre membros do pelotão.
+você pode acessar atravez do link: https://race-hub-six.vercel.app
 
 ## ✨ Funcionalidades Principais
 
